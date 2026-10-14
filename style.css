@@ -74,3 +74,9 @@
 .cfp-tags { display: flex; flex-wrap: wrap; gap: 5px; margin: 5px 0 3px; }
 .cfp-tags span { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: rgba(127,90,240,.25); }
 .cfp-reqs { font-size: 11px; opacity: .8; margin: 3px 0; background: rgba(255,255,255,.05); border-radius: 8px; padding: 4px 8px; }
+.cfp-opw { display: flex; align-items: center; gap: 3px; font-size: 10px; }
+.cfp-op { width: 70px; height: 12px; margin: 0; accent-color: #2cb67d; }
+.cfp-opw small { min-width: 28px; opacity: .8; }
+.cfp-lang { cursor: pointer; padding: 1px 6px; border-radius: 8px; background: rgba(255,255,255,.12); font-size: 10px; }
+.cfp-pick small { display: block; opacity: .7; font-size: 10px; }
+.cfp-num { width: 90px; flex: 0 0 90px; }

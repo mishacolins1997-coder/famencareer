@@ -2,190 +2,209 @@
   const MODULE = 'career_fame';
   const ctx = () => SillyTavern.getContext();
 
-  /* =====================  ДАННЫЕ  ===================== */
-  const CAREERS = {
-    blogger:  { icon: '📱', name: 'Блогер',    ladder: ['Начинающий блогер', 'Автор с аудиторией', 'Известный блогер', 'Инфлюенсер', 'Топ-блогер', 'Икона интернета'] },
-    streamer: { icon: '🎮', name: 'Стример',   ladder: ['Стример-новичок', 'Постоянный стример', 'Партнёр платформы', 'Звезда стримов', 'Топ-стример', 'Легенда стриминга'] },
-    actor:    { icon: '🎬', name: 'Актёр',     ladder: ['Актёр массовки', 'Эпизодический актёр', 'Актёр второго плана', 'Ведущий актёр', 'Звезда кино', 'Икона Голливуда'] },
-    musician: { icon: '🎤', name: 'Музыкант',  ladder: ['Уличный музыкант', 'Игрок клубов', 'Локальный артист', 'Артист лейбла', 'Хедлайнер', 'Легенда сцены'] },
-    athlete:  { icon: '🏅', name: 'Спортсмен', ladder: ['Любитель', 'Подающий надежды', 'Профессионал', 'Чемпион региона', 'Звезда лиги', 'Живая легенда спорта'] },
-  };
-  const LEVEL_ICONS = ['🌱', '🌿', '🌳', '⭐', '🌟', '👑'];
-  const FAME_TIERS = [
-    [0, '⚪', 'Никому не известен'], [50, '🌱', 'Узнают друзья'], [150, '📍', 'Местная известность'],
-    [350, '⭐', 'Растущая звезда'], [600, '🌟', 'Знаменитость'], [850, '🔥', 'Мега-звезда'], [980, '👑', 'Легенда'],
-  ];
-  const CANCEL = {
-    1: { icon: '⚠️', turns: 10, fame: -60,  label: 'Скандал' },
-    2: { icon: '🚫', turns: 25, fame: -150, label: 'Отмена' },
-    3: { icon: '☠️', turns: 50, fame: -350, label: 'Тотальная отмена' },
-  };
-  const SEG = { loyal: ['👥', 'Фанаты'], brands: ['💼', 'Бренды и спонсоры'], public: ['📰', 'Публика и СМИ'] };
-  const MOODS = [[20, 'враждебны'], [40, 'недовольны'], [60, 'нейтральны'], [80, 'довольны'], [101, 'в восторге']];
-  const mood = (v) => MOODS.find(([m]) => v < m)[1];
-
-  const MOVES = {
-    adult: { icon: '🔞', name: 'уход на платформу 18+ (OnlyFans и т.п.)',
-      base: { fame: 30, loyal: -5, brands: -25, public: -10, heat: 0, p: 0.2, sev: 1 },
-      career: {
-        blogger:  { fame: 40, brands: -20 },
-        streamer: { loyal: -10, brands: -30 },
-        actor:    { fame: 20, brands: -30, public: -15, p: 0.3 },
-        musician: { fame: 35, loyal: 5, brands: -15, public: -5, p: 0.1 },
-        athlete:  { fame: 25, loyal: -15, brands: -45, public: -20, p: 0.4, sev: 2 },
-      },
-      r: { loyalPos: 'часть фанатов поддерживает выбор и донатит', loyalNeg: 'фанаты спорят: «продался», кто-то отписывается',
-           brandsPos: 'нишевые бренды и агентства сами пишут с предложениями', brandsNeg: 'спонсоры тихо замораживают контракты',
-           publicPos: 'интернет шутит и обсуждает, охваты растут', publicNeg: 'СМИ и комментаторы осуждают, звучат упрёки в «падении»' } },
-    casino: { icon: '🎰', name: 'реклама казино / лутбоксов / ставок',
-      base: { fame: 20, loyal: -20, brands: 10, public: -25, heat: 35, p: 0.35, sev: 2 },
-      career: {
-        streamer: { loyal: -25, public: -30, heat: 45, p: 0.45 },
-        blogger:  { loyal: -22 },
-        actor:    { brands: -10, p: 0.3 },
-        musician: { loyal: -10, public: -15, p: 0.25 },
-        athlete:  { brands: -40, p: 0.5 },
-      },
-      r: { loyalPos: 'часть аудитории в азарте и просит промокоды', loyalNeg: 'фанаты разочарованы рекламой казино: «зачем ты это пиаришь»',
-           brandsPos: 'букмекеры и гемблинг-партнёры предлагают крупные контракты', brandsNeg: 'приличные бренды разрывают сотрудничество',
-           publicPos: 'публика равнодушно пожимает плечами', publicNeg: 'пресса и родители поднимают тему игровой зависимости' } },
-    scam: { icon: '🕳️', name: 'реклама скамеров / мошеннических проектов',
-      base: { fame: 15, loyal: -35, brands: -30, public: -40, heat: 60, p: 0.5, sev: 3 },
-      career: { blogger: { loyal: -40 }, streamer: { loyal: -40 }, athlete: { brands: -40 } },
-      r: { loyalPos: 'самые преданные пока защищают: «может, он не знал»', loyalNeg: 'подписчики злятся, что их втянули, и требуют вернуть деньги',
-           brandsPos: 'сомнительные «партнёры» радостно предлагают новые сделки', brandsNeg: 'честные бренды мгновенно дистанцируются',
-           publicPos: 'шум привлёк внимание', publicNeg: 'расследователи и СМИ копают, в сети разбирают схему' } },
-    crypto: { icon: '🪙', name: 'реклама крипто-пирамид / памп-схем',
-      base: { fame: 20, loyal: -25, brands: -15, public: -30, heat: 50, p: 0.45, sev: 2 },
-      career: { streamer: { loyal: -20 }, musician: { loyal: -15 } },
-      r: { loyalPos: 'часть фанатов ждёт быстрой прибыли и хайпит', loyalNeg: 'подписчики боятся потерять вложения и обвиняют в памп-схеме',
-           brandsPos: 'крипто-проекты предлагают контракты', brandsNeg: 'банки и серьёзные спонсоры отходят',
-           publicPos: 'тема взлетает в трендах', publicNeg: 'аналитики и СМИ называют это пирамидой' } },
-    fake: { icon: '🎁', name: 'фейковые розыгрыши / накрутка',
-      base: { fame: 25, loyal: -15, brands: -10, public: -20, heat: 40, p: 0.3, sev: 1 },
-      career: { streamer: { fame: 30 }, blogger: { fame: 30 } },
-      r: { loyalPos: 'фанаты радуются «розыгрышу» и ставят лайки', loyalNeg: 'участники подозревают обман и пишут жалобы',
-           brandsPos: 'рекламодатели довольны цифрами охвата', brandsNeg: 'бренды замечают накрутку и пересматривают договор',
-           publicPos: 'охваты растут, обсуждают призы', publicNeg: 'блогеры-разоблачители выкладывают разбор' } },
-  };
-  const MOVE_KEYS = Object.keys(MOVES);
-
-  // Блогер / стример: задания привязаны к месту и формату, у каждого сочетания свои требования
-  const PLACES = {
-    home:   { icon: '🏠', name: 'Дома',            mult: 1 },
-    street: { icon: '🌆', name: 'На улице',        mult: 1.2 },
-    event:  { icon: '🎪', name: 'На мероприятии',  mult: 1.4 },
-  };
-  const FORMATS = { video: '🎥 Видео/влог', stories: '📸 Сторис', post: '🖼️ Пост/фото', stream: '🔴 Стрим' };
-  const REQS = {
-    home: {
-      video:   ['Свет и аккуратный фон', 'Чистый звук без шума', 'Заряженная камера'],
-      stories: ['Хороший свет', 'Интересная идея кадра', 'Заряженный телефон'],
-      post:    ['Оформленный кадр и фон', 'Подпись и хэштеги'],
-      stream:  ['Стабильный интернет', 'Настроенные камера, микрофон и OBS', 'Тишина — предупредить домашних'],
-    },
-    street: {
-      video:   ['Выбрать локацию и проверить погоду', 'Защита микрофона от ветра и шума', 'Не снимать людей без согласия'],
-      stories: ['Живая локация и дневной свет', 'Осторожность с прохожими в кадре', 'Заряд и мобильный интернет'],
-      post:    ['Красивая локация и свет', 'Не мешать прохожим'],
-      stream:  ['Мобильный интернет и пауэрбанк', 'IRL-экипировка (телефон, стабилизатор)', 'Приватность: без лиц и номеров без согласия', 'Безопасность места'],
-    },
-    event: {
-      video:   ['Разрешение организаторов на съёмку', 'Шум вокруг — продумать звук', 'Соблюдать правила мероприятия'],
-      stories: ['Согласие организаторов', 'Отметить мероприятие и участников', 'Не мешать другим гостям'],
-      post:    ['Согласие организаторов', 'Отметки и хэштеги мероприятия'],
-      stream:  ['Согласовать трансляцию с организаторами', 'Проверить связь в толпе', 'Права на музыку и контент мероприятия', 'Модерация чата'],
-    },
-  };
-  const hasPlaces = (e) => e.career === 'blogger' || e.career === 'streamer';
-  const reqsFor = (place, format) => (REQS[place] && REQS[place][format]) || [];
-  const rewardOf = (t) => { const m = (PLACES[t.place] && PLACES[t.place].mult) || 1; return { xp: Math.round((t.xp || 0) * m), fame: Math.round((t.fame || 0) * m) }; };
-  const placeInfo = (t) => (t.place && PLACES[t.place] ? `; МЕСТО: ${PLACES[t.place].name}; формат: ${FORMATS[t.format] || 'любой'}; условия: ${(t.reqs || []).join(', ')}` : '');
-  const pickRnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
-  const rollPlace = () => { const r = Math.random(); return r < 0.4 ? 'home' : r < 0.8 ? 'street' : 'event'; };
-
+  /* =====================  ЯЗЫК / LANGUAGE  ===================== */
+  // Статичные данные хранятся строками «ru|en». Динамические тексты — через tr(ru, en).
   const DEFAULTS = {
-    enabled: true, inject: true, auto: true, demandActions: true,
+    lang: 'ru', enabled: true, inject: true, auto: true, demandActions: true,
     showFab: true, opacity: 0.95, fabX: null, fabY: null,
     mode: 'current', profileId: '',
     endpointUrl: 'http://localhost:4000/v1', endpointKey: '', endpointModel: '',
+    haters: true, doxx: true, stalkers: true, stalkerPlate: true, stalkerFreq: 'normal',
+    cuckTag: true, cuckTarget: 'self', cancelChance: {}, exposeScale: 100,
   };
+  function S() {
+    const { extensionSettings } = ctx();
+    if (!extensionSettings[MODULE]) extensionSettings[MODULE] = {};
+    const st = extensionSettings[MODULE];
+    for (const k of Object.keys(DEFAULTS)) if (st[k] === undefined) st[k] = typeof DEFAULTS[k] === 'object' && DEFAULTS[k] ? JSON.parse(JSON.stringify(DEFAULTS[k])) : DEFAULTS[k];
+    return st;
+  }
+  const saveSettings = () => ctx().saveSettingsDebounced();
+  const LANG = () => (S().lang === 'en' ? 'en' : 'ru');
+  const tr = (ru, en) => (LANG() === 'en' ? en : ru);
+  const bi = (s, l = LANG()) => { const i = String(s).indexOf('|'); return i < 0 ? s : (l === 'en' ? s.slice(i + 1) : s.slice(0, i)); };
+
+  /* =====================  ДАННЫЕ  ===================== */
+  const CAREERS = {
+    blogger:  { icon: '📱', name: 'Блогер|Blogger', ladder: ['Начинающий блогер|Beginner blogger', 'Автор с аудиторией|Creator with an audience', 'Известный блогер|Known blogger', 'Инфлюенсер|Influencer', 'Топ-блогер|Top blogger', 'Икона интернета|Internet icon'] },
+    streamer: { icon: '🎮', name: 'Стример|Streamer', ladder: ['Стример-новичок|Newbie streamer', 'Постоянный стример|Regular streamer', 'Партнёр платформы|Platform partner', 'Звезда стримов|Streaming star', 'Топ-стример|Top streamer', 'Легенда стриминга|Streaming legend'] },
+    actor:    { icon: '🎬', name: 'Актёр|Actor', ladder: ['Актёр массовки|Extra', 'Эпизодический актёр|Bit-part actor', 'Актёр второго плана|Supporting actor', 'Ведущий актёр|Lead actor', 'Звезда кино|Movie star', 'Икона Голливуда|Hollywood icon'] },
+    musician: { icon: '🎤', name: 'Музыкант|Musician', ladder: ['Уличный музыкант|Street musician', 'Игрок клубов|Club performer', 'Локальный артист|Local artist', 'Артист лейбла|Label artist', 'Хедлайнер|Headliner', 'Легенда сцены|Stage legend'] },
+    athlete:  { icon: '🏅', name: 'Спортсмен|Athlete', ladder: ['Любитель|Amateur', 'Подающий надежды|Rising prospect', 'Профессионал|Professional', 'Чемпион региона|Regional champion', 'Звезда лиги|League star', 'Живая легенда спорта|Living sports legend'] },
+  };
+  const LEVEL_ICONS = ['🌱', '🌿', '🌳', '⭐', '🌟', '👑'];
+  const FAME_TIERS = [
+    [0, '⚪', 'Никому не известен|Unknown'], [50, '🌱', 'Узнают друзья|Known to friends'], [150, '📍', 'Местная известность|Locally known'],
+    [350, '⭐', 'Растущая звезда|Rising star'], [600, '🌟', 'Знаменитость|Celebrity'], [850, '🔥', 'Мега-звезда|Megastar'], [980, '👑', 'Легенда|Legend'],
+  ];
+  const CANCEL = {
+    1: { icon: '⚠️', turns: 10, fame: -60,  label: 'Скандал|Scandal' },
+    2: { icon: '🚫', turns: 25, fame: -150, label: 'Отмена|Cancelled' },
+    3: { icon: '☠️', turns: 50, fame: -350, label: 'Тотальная отмена|Total cancellation' },
+  };
+  const SEG = { loyal: ['👥', 'Фанаты|Fans'], brands: ['💼', 'Бренды и спонсоры|Brands & sponsors'], public: ['📰', 'Публика и СМИ|Public & media'] };
+  const MOODS = [[20, 'враждебны|hostile'], [40, 'недовольны|displeased'], [60, 'нейтральны|neutral'], [80, 'довольны|pleased'], [101, 'в восторге|thrilled']];
+  const mood = (v, l) => bi(MOODS.find(([m]) => v < m)[1], l);
+
+  const MOVES = {
+    adult: { icon: '🔞', name: 'уход на платформу 18+ (OnlyFans и т.п.)|moving to an 18+ platform (OnlyFans etc.)', hate: 10,
+      base: { fame: 30, loyal: -5, brands: -25, public: -10, heat: 0, p: 0.2, sev: 1 },
+      career: { blogger: { fame: 40, brands: -20 }, streamer: { loyal: -10, brands: -30 }, actor: { fame: 20, brands: -30, public: -15, p: 0.3 },
+        musician: { fame: 35, loyal: 5, brands: -15, public: -5, p: 0.1 }, athlete: { fame: 25, loyal: -15, brands: -45, public: -20, p: 0.4, sev: 2 } },
+      r: { loyalPos: 'часть фанатов поддерживает выбор и донатит|some fans support the choice and donate', loyalNeg: 'фанаты спорят: «продался», кто-то отписывается|fans argue “sold out”, some unsubscribe',
+           brandsPos: 'нишевые бренды и агентства сами пишут с предложениями|niche brands and agencies reach out with offers', brandsNeg: 'спонсоры тихо замораживают контракты|sponsors quietly freeze contracts',
+           publicPos: 'интернет шутит и обсуждает, охваты растут|the internet jokes and talks, reach grows', publicNeg: 'СМИ и комментаторы осуждают, звучат упрёки в «падении»|media and commentators condemn it' } },
+    casino: { icon: '🎰', name: 'реклама казино / лутбоксов / ставок|casino / lootbox / betting ads', hate: 15,
+      base: { fame: 20, loyal: -20, brands: 10, public: -25, heat: 35, p: 0.35, sev: 2 },
+      career: { streamer: { loyal: -25, public: -30, heat: 45, p: 0.45 }, blogger: { loyal: -22 }, actor: { brands: -10, p: 0.3 }, musician: { loyal: -10, public: -15, p: 0.25 }, athlete: { brands: -40, p: 0.5 } },
+      r: { loyalPos: 'часть аудитории в азарте и просит промокоды|part of the audience is excited and asks for promo codes', loyalNeg: 'фанаты разочарованы: «зачем ты это пиаришь»|fans are disappointed: “why are you promoting this”',
+           brandsPos: 'букмекеры и гемблинг-партнёры предлагают крупные контракты|betting and gambling partners offer big contracts', brandsNeg: 'приличные бренды разрывают сотрудничество|respectable brands cut ties',
+           publicPos: 'публика равнодушно пожимает плечами|the public shrugs', publicNeg: 'пресса и родители поднимают тему игровой зависимости|press and parents raise gambling addiction' } },
+    scam: { icon: '🕳️', name: 'реклама скамеров / мошеннических проектов|advertising scammers / fraudulent projects', hate: 30,
+      base: { fame: 15, loyal: -35, brands: -30, public: -40, heat: 60, p: 0.5, sev: 3 },
+      career: { blogger: { loyal: -40 }, streamer: { loyal: -40 }, athlete: { brands: -40 } },
+      r: { loyalPos: 'самые преданные пока защищают: «может, он не знал»|the most loyal defend: “maybe they didn’t know”', loyalNeg: 'подписчики злятся, что их втянули, и требуют вернуть деньги|followers are angry about being dragged in and demand refunds',
+           brandsPos: 'сомнительные «партнёры» предлагают новые сделки|shady “partners” offer new deals', brandsNeg: 'честные бренды мгновенно дистанцируются|honest brands distance themselves instantly',
+           publicPos: 'шум привлёк внимание|the noise drew attention', publicNeg: 'расследователи и СМИ копают, в сети разбирают схему|investigators and media dig in, the scheme gets dissected online' } },
+    crypto: { icon: '🪙', name: 'реклама крипто-пирамид / памп-схем|crypto pyramid / pump-scheme ads', hate: 25,
+      base: { fame: 20, loyal: -25, brands: -15, public: -30, heat: 50, p: 0.45, sev: 2 },
+      career: { streamer: { loyal: -20 }, musician: { loyal: -15 } },
+      r: { loyalPos: 'часть фанатов ждёт быстрой прибыли и хайпит|some fans expect quick profit and hype it', loyalNeg: 'подписчики боятся потерять вложения и обвиняют в памп-схеме|followers fear losing money and accuse a pump scheme',
+           brandsPos: 'крипто-проекты предлагают контракты|crypto projects offer contracts', brandsNeg: 'банки и серьёзные спонсоры отходят|banks and serious sponsors back off',
+           publicPos: 'тема взлетает в трендах|the topic trends', publicNeg: 'аналитики и СМИ называют это пирамидой|analysts and media call it a pyramid' } },
+    fake: { icon: '🎁', name: 'фейковые розыгрыши / накрутка|fake giveaways / botting', hate: 20,
+      base: { fame: 25, loyal: -15, brands: -10, public: -20, heat: 40, p: 0.3, sev: 1 },
+      career: { streamer: { fame: 30 }, blogger: { fame: 30 } },
+      r: { loyalPos: 'фанаты радуются «розыгрышу» и ставят лайки|fans enjoy the “giveaway” and like it', loyalNeg: 'участники подозревают обман и пишут жалобы|participants suspect a fraud and complain',
+           brandsPos: 'рекламодатели довольны цифрами охвата|advertisers are happy with the reach numbers', brandsNeg: 'бренды замечают накрутку и пересматривают договор|brands notice the botting and review the deal',
+           publicPos: 'охваты растут, обсуждают призы|reach grows, people discuss the prizes', publicNeg: 'блогеры-разоблачители выкладывают разбор|debunker bloggers post an exposé' } },
+    guru: { icon: '🎓', name: 'инфоцыганство (дорогие курсы и марафоны «как разбогатеть»)|info-gypsy scams (overpriced “get rich” courses and marathons)', hate: 25,
+      base: { fame: 25, loyal: -20, brands: -15, public: -35, heat: 45, p: 0.4, sev: 2 },
+      career: { blogger: { fame: 30, loyal: -25 }, streamer: { fame: 28, loyal: -25 }, athlete: { brands: -25 }, musician: { public: -40 } },
+      r: { loyalPos: 'часть подписчиков верит в «систему» и покупает курс|some followers believe in the “system” and buy the course', loyalNeg: 'подписчики требуют вернуть деньги за курс, который не работает|followers demand refunds for a course that doesn’t work',
+           brandsPos: 'партнёрские программы и инфобизнес-площадки предлагают проценты|affiliate programs and info-business platforms offer commissions', brandsNeg: 'нормальные бренды не хотят ассоциироваться с «гуру»|decent brands refuse to be associated with a “guru”',
+           publicPos: 'громкие обещания разлетаются по ленте|the loud promises spread through feeds', publicNeg: 'разоблачители и СМИ разбирают курс и обещания дохода|debunkers and media dissect the course and its income promises' } },
+  };
+  const MOVE_KEYS = Object.keys(MOVES);
+
+  const PLACES = {
+    home:   { icon: '🏠', name: 'Дома|At home', mult: 1 },
+    street: { icon: '🌆', name: 'На улице|Outdoors', mult: 1.2 },
+    event:  { icon: '🎪', name: 'На мероприятии|At an event', mult: 1.4 },
+  };
+  const FORMATS = {
+    video:   { icon: '🎥', n: 'Видео/влог|Video / vlog' },
+    stories: { icon: '📸', n: 'Сторис|Stories' },
+    post:    { icon: '🖼️', n: 'Пост/фото|Post / photo' },
+    stream:  { icon: '🔴', n: 'Стрим|Stream' },
+  };
+  const pName = (k) => bi(PLACES[k].name);
+  const fLabel = (k) => `${FORMATS[k].icon} ${bi(FORMATS[k].n)}`;
+  const REQS = {
+    home: {
+      video:   ['Свет и аккуратный фон|Good light and a tidy background', 'Чистый звук без шума|Clean sound without noise', 'Заряженная камера|A charged camera'],
+      stories: ['Хороший свет|Good light', 'Интересная идея кадра|An interesting shot idea', 'Заряженный телефон|A charged phone'],
+      post:    ['Оформленный кадр и фон|A styled shot and background', 'Подпись и хэштеги|Caption and hashtags'],
+      stream:  ['Стабильный интернет|Stable internet', 'Настроенные камера, микрофон и OBS|Camera, mic and OBS set up', 'Тишина — предупредить домашних|Quiet — warn the household'],
+    },
+    street: {
+      video:   ['Выбрать локацию и проверить погоду|Pick a location and check the weather', 'Защита микрофона от ветра и шума|Wind and noise protection for the mic', 'Не снимать людей без согласия|Do not film people without consent'],
+      stories: ['Живая локация и дневной свет|A lively location and daylight', 'Осторожность с прохожими в кадре|Care with passers-by in frame', 'Заряд и мобильный интернет|Battery and mobile data'],
+      post:    ['Красивая локация и свет|A nice location and light', 'Не мешать прохожим|Do not obstruct passers-by'],
+      stream:  ['Мобильный интернет и пауэрбанк|Mobile data and a power bank', 'IRL-экипировка (телефон, стабилизатор)|IRL gear (phone, gimbal)', 'Приватность: без лиц и номеров без согласия|Privacy: no faces or plates without consent', 'Безопасность места|Safety of the location'],
+    },
+    event: {
+      video:   ['Разрешение организаторов на съёмку|Organizers’ permission to film', 'Шум вокруг — продумать звук|Noisy surroundings — plan the sound', 'Соблюдать правила мероприятия|Follow the event rules'],
+      stories: ['Согласие организаторов|Organizers’ consent', 'Отметить мероприятие и участников|Tag the event and participants', 'Не мешать другим гостям|Do not disturb other guests'],
+      post:    ['Согласие организаторов|Organizers’ consent', 'Отметки и хэштеги мероприятия|Event tags and hashtags'],
+      stream:  ['Согласовать трансляцию с организаторами|Agree the broadcast with the organizers', 'Проверить связь в толпе|Check the connection in a crowd', 'Права на музыку и контент мероприятия|Rights to the event’s music and content', 'Модерация чата|Chat moderation'],
+    },
+  };
+  const hasPlaces = (e) => e.career === 'blogger' || e.career === 'streamer';
+  const reqsFor = (place, format) => ((REQS[place] && REQS[place][format]) || []).map((x) => bi(x));
+  const rewardOf = (t) => { const m = (PLACES[t.place] && PLACES[t.place].mult) || 1; return { xp: Math.round((t.xp || 0) * m), fame: Math.round((t.fame || 0) * m) }; };
+  const placeInfo = (t) => (t.place && PLACES[t.place] ? `; PLACE: ${bi(PLACES[t.place].name, 'en')}; format: ${t.format ? bi(FORMATS[t.format].n, 'en') : 'any'}; conditions: ${(REQS[t.place]?.[t.format] || []).map((x) => bi(x, 'en')).join(', ')}` : '');
+  const pickRnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const rollPlace = () => { const r = Math.random(); return r < 0.4 ? 'home' : r < 0.8 ? 'street' : 'event'; };
+  const STALK_P = { rare: 0.004, normal: 0.01, often: 0.025 };
 
   const xpNeeded = (lvl) => Math.round(100 * Math.pow(lvl, 1.4));
   const fameRow = (f) => [...FAME_TIERS].reverse().find(([min]) => f >= min);
-  const fameTier = (f) => fameRow(f)[2];
+  const fameTier = (f, l) => bi(fameRow(f)[2], l);
   const fameIcon = (f) => fameRow(f)[1];
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const uid = () => 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-  function S() {
-    const { extensionSettings } = ctx();
-    if (!extensionSettings[MODULE]) extensionSettings[MODULE] = {};
-    for (const k of Object.keys(DEFAULTS)) if (extensionSettings[MODULE][k] === undefined) extensionSettings[MODULE][k] = DEFAULTS[k];
-    return extensionSettings[MODULE];
-  }
-  const saveSettings = () => ctx().saveSettingsDebounced();
   function chatState() {
     const md = ctx().chatMetadata;
     if (!md[MODULE]) md[MODULE] = { entities: {} };
     return md[MODULE];
   }
   const saveChat = () => ctx().saveMetadata();
-
   function names() {
     const c = ctx(); const list = [];
     if (c.name1) list.push(c.name1);
     if (c.name2 && c.name2 !== c.name1) list.push(c.name2);
     return list;
   }
-  const END_STEP = 'Завершить задание: закончить дело и покинуть место действия';
+
+  const END_STEP = () => tr('Завершить задание: закончить дело и покинуть место действия', 'Finish the task: wrap up and leave the place');
   const progressOf = (t) => (t.done ? 100 : Math.min(99, Math.round((t.steps.filter((x) => x.done).length / (t.steps.length || 1)) * 100)));
   function normTask(t) {
     if (!Array.isArray(t.steps)) t.steps = [];
     t.steps = t.steps.map((x) => (typeof x === 'string' ? { text: x, done: false } : { text: String(x?.text ?? ''), done: !!x?.done })).filter((x) => x.text);
     if (!t.steps.length) {
-      t.steps = [{ text: `Выполнить: ${t.title}`, done: false }, { text: END_STEP, done: false }];
-      if (t.place && PLACES[t.place]) t.steps.unshift({ text: `Подготовиться (${PLACES[t.place].name.toLowerCase()}): техника, условия, место`, done: false });
+      t.steps = [{ text: tr(`Выполнить: ${t.title}`, `Do: ${t.title}`), done: false }, { text: END_STEP(), done: false }];
+      if (t.place && PLACES[t.place]) t.steps.unshift({ text: tr(`Подготовиться (${pName(t.place).toLowerCase()}): техника, условия, место`, `Prepare (${pName(t.place).toLowerCase()}): gear, conditions, place`), done: false });
     }
     if (t.place && PLACES[t.place] && !Array.isArray(t.reqs)) t.reqs = reqsFor(t.place, t.format);
     t.progress = progressOf(t);
     return t;
   }
   const stepsLine = (t) => t.steps.map((x) => `${x.done ? '☑' : '☐'} ${x.text}`).join(' → ');
+
   function ent(name) {
     const st = chatState();
     if (!st.entities[name]) st.entities[name] = { career: null, level: 1, xp: 0, fame: 0, cancel: null, tasks: [], log: [] };
     const e = st.entities[name];
     if (e.career && !CAREERS[e.career]) { e.career = null; e.level = 1; e.xp = 0; }
     if (!e.audience) e.audience = { loyal: 50, brands: 50, public: 50 };
-    if (e.heat === undefined) e.heat = 0;
-    if (!e.moves) e.moves = [];
-    if (e.reaction === undefined) e.reaction = null;
+    const defs = { heat: 0, moves: [], reaction: null, live: null, contentAt: {}, progress: {}, haters: 0, privacy: 30, doxxLeft: 0, stalker: null, stalkerHidden: false, stalkerCool: 0, tags: {} };
+    for (const [k, v] of Object.entries(defs)) if (e[k] === undefined) e[k] = typeof v === 'object' && v ? JSON.parse(JSON.stringify(v)) : v;
     if (!e.stats) e.stats = { stream: 0, stories: 0, video: 0, post: 0 };
-    if (e.live === undefined) e.live = null;
-    if (!e.contentAt) e.contentAt = {};
     e.tasks.forEach(normTask);
     return e;
   }
   const careerOf = (e) => (e.career && CAREERS[e.career]) || null;
-  const maxLevel = (e) => (careerOf(e) ? careerOf(e).ladder.length : 1);
-  const titleOf = (e) => { const c = careerOf(e); return c ? c.ladder[clamp(e.level, 1, c.ladder.length) - 1] : 'Без карьеры'; };
+  const careerName = (k) => bi(CAREERS[k].name);
+  const ladderOf = (k) => CAREERS[k].ladder.map((x) => bi(x));
+  const maxLevel = (e) => (careerOf(e) ? 6 : 1);
+  const titleOf = (e) => (careerOf(e) ? ladderOf(e.career)[clamp(e.level, 1, 6) - 1] : tr('Без карьеры', 'No career'));
   const iconOf = (e) => (careerOf(e) ? careerOf(e).icon : '💼');
   const addLog = (e, text) => { e.log.unshift(text); e.log = e.log.slice(0, 40); };
+  const lvlOf = (e, k) => (e.career === k ? e.level : (e.progress[k] && e.progress[k].level) || 0);
 
   /* =====================  ЛОГИКА  ===================== */
+  function switchCareer(name, e, k) {
+    if (!CAREERS[k] || e.career === k) return;
+    if (e.career) e.progress[e.career] = { level: e.level, xp: e.xp };   // прогресс прежней профессии сохраняется
+    e.career = k;
+    const p = e.progress[k] || { level: 1, xp: 0 };
+    e.level = p.level; e.xp = p.xp;
+    addLog(e, tr(`${CAREERS[k].icon} Профессия: ${careerName(k)} (ур. ${e.level}). Остальные карьеры и аудитория сохранены`, `${CAREERS[k].icon} Career: ${careerName(k)} (lvl ${e.level}). Other careers and audience are kept`));
+  }
   function gainXp(name, e, amount) {
     if (!e.career) return;
     if (e.cancel && amount > 0) amount = Math.floor(amount / 2);
     e.xp += amount;
     while (e.level < maxLevel(e) && e.xp >= xpNeeded(e.level)) {
       e.xp -= xpNeeded(e.level); e.level++;
-      addLog(e, `⬆️ Уровень ${e.level}: ${titleOf(e)}`);
-      toastr.success(`${iconOf(e)} ${name}: ${titleOf(e)} (ур. ${e.level})`, 'Career & Fame');
+      addLog(e, tr(`⬆️ Уровень ${e.level}: ${titleOf(e)}`, `⬆️ Level ${e.level}: ${titleOf(e)}`));
+      toastr.success(`${iconOf(e)} ${name}: ${titleOf(e)} (${tr('ур.', 'lvl')} ${e.level})`, 'Career & Fame');
     }
     while (e.xp < 0) {
-      if (e.level > 1) { e.level--; e.xp += xpNeeded(e.level); addLog(e, `⬇️ Понижение до уровня ${e.level}`); toastr.warning(`${name} понижен(а): ${titleOf(e)}`, 'Career & Fame'); }
+      if (e.level > 1) { e.level--; e.xp += xpNeeded(e.level); addLog(e, tr(`⬇️ Понижение до уровня ${e.level}`, `⬇️ Demoted to level ${e.level}`)); toastr.warning(tr(`${name} понижен(а): ${titleOf(e)}`, `${name} demoted: ${titleOf(e)}`), 'Career & Fame'); }
       else e.xp = 0;
     }
     if (e.level >= maxLevel(e)) e.xp = Math.min(e.xp, xpNeeded(e.level) - 1);
@@ -195,36 +214,71 @@
     if (e.audience && e.audience.loyal < 20 && amount > 0) amount = Math.floor(amount / 2);
     e.fame = clamp(e.fame + amount, 0, 1000);
   }
+  const addHate = (e, n) => { if (S().haters) e.haters = clamp(e.haters + n, 0, 100); };
+  const doxxChance = (e) => clamp(Math.round(e.haters * 0.45 + (e.fame / 1000) * 25 + (e.cancel ? 15 : 0) + (e.stalker ? e.stalker.level * 0.15 : 0) - e.privacy * 0.25), 0, 95);
+  const stalkerVisible = (e) => S().stalkers && S().stalkerPlate && e.stalker && !e.stalkerHidden;
+
   function applyCancel(name, e, severity, reason) {
     const sev = clamp(parseInt(severity) || 1, 1, 3); const cfg = CANCEL[sev];
-    e.cancel = { severity: sev, reason: reason || 'неизвестно', left: cfg.turns };
+    e.cancel = { severity: sev, reason: reason || tr('неизвестно', 'unknown'), left: cfg.turns };
     e.fame = clamp(e.fame + cfg.fame, 0, 1000);
+    addHate(e, sev * 15);
     if (sev === 3 && e.level > 1) gainXp(name, e, -Math.round(xpNeeded(e.level - 1) * 0.5));
     if (!e.tasks.some((t) => t.type === 'apology' && !t.done)) {
-      e.tasks.push({ id: uid(), type: 'apology', src: 'system', title: 'Публичные извинения', desc: 'Загладить вину перед публикой', steps: ['Признать ошибку', 'Публично извиниться', 'Показать, что выводы сделаны'], xp: 20 * sev, fame: 0, done: false, active: true, progress: 0 });
+      e.tasks.push({ id: uid(), type: 'apology', src: 'system', title: tr('Публичные извинения', 'Public apology'), desc: tr('Загладить вину перед публикой', 'Make amends to the public'),
+        steps: [tr('Признать ошибку', 'Admit the mistake'), tr('Публично извиниться', 'Apologize publicly'), tr('Показать, что выводы сделаны', 'Show that lessons were learned')], xp: 20 * sev, fame: 0, done: false, active: true, progress: 0 });
     }
-    addLog(e, `${cfg.icon} ${cfg.label} (ст. ${sev}): ${e.cancel.reason}`);
-    toastr.error(`${cfg.icon} ${name}: ${cfg.label} — ${e.cancel.reason}`, 'Career & Fame');
+    addLog(e, `${cfg.icon} ${bi(cfg.label)} (${tr('ст.', 'lvl')} ${sev}): ${e.cancel.reason}`);
+    toastr.error(`${cfg.icon} ${name}: ${bi(cfg.label)} — ${e.cancel.reason}`, 'Career & Fame');
   }
   function liftCancel(name, e, why) {
     if (!e.cancel) return;
     e.cancel = null; e.fame = clamp(e.fame + 20, 0, 1000);
-    addLog(e, `✅ Отмена снята ${why || ''}`);
-    toastr.info(`${name}: отмена снята`, 'Career & Fame');
+    addLog(e, tr(`✅ Отмена снята ${why || ''}`, `✅ Cancellation lifted ${why || ''}`));
+    toastr.info(tr(`${name}: отмена снята`, `${name}: cancellation lifted`), 'Career & Fame');
   }
+
+  /* ---- Хейтеры, доксинг, сталкеры ---- */
+  function addSafetyTask(e, type) {
+    if (e.tasks.some((t) => t.type === type && !t.done)) return;
+    const defs = {
+      safety:  { title: tr('Защита после утечки данных', 'Protect yourself after the data leak'), desc: tr('Ограничить ущерб и вернуть контроль над личной информацией', 'Limit the damage and regain control of your personal information'),
+        steps: [tr('Сообщить платформам и в поддержку', 'Report to the platforms and support'), tr('Сменить доступы, скрыть личные данные', 'Change access, hide personal data'), tr('При угрозах обратиться в полицию или к юристу', 'If threatened, contact the police or a lawyer')], xp: 30 },
+      stalker: { title: tr('Разобраться со сталкером', 'Deal with the stalker'), desc: tr('Обезопасить себя и прекратить навязчивое внимание', 'Make yourself safe and stop the obsessive attention'),
+        steps: [tr('Заблокировать и пожаловаться', 'Block and report'), tr('Усилить безопасность: охрана, не раскрывать геолокацию', 'Tighten security: guards, no live location'), tr('При угрозах обратиться в полицию', 'If threatened, contact the police')], xp: 30 },
+    }[type];
+    e.tasks.push({ id: uid(), type, src: 'system', title: defs.title, desc: defs.desc, steps: defs.steps, xp: defs.xp, fame: 0, done: false, active: false, progress: 0 });
+  }
+  function startDoxx(name, e) {
+    if (!S().doxx || e.doxxLeft > 0) return;
+    e.doxxLeft = 12; e.privacy = clamp(e.privacy - 10, 0, 100);
+    e.audience.public = clamp(e.audience.public - 5, 0, 100); e.audience.loyal = clamp(e.audience.loyal + 3, 0, 100);
+    addHate(e, 5);
+    addSafetyTask(e, 'safety');
+    e.reaction = { type: 'doxx', text: tr('Личные данные утекли в сеть: фанаты возмущены, платформы получают жалобы, герою нужно срочно защищаться', 'Personal data leaked online: fans are outraged, platforms receive reports, the hero must protect themselves fast'), left: 6 };
+    addLog(e, tr('🕵️ Доксинг: личные данные утекли в сеть', '🕵️ Doxxing: personal data leaked online'));
+    toastr.error(tr(`🕵️ ${name}: личные данные утекли в сеть!`, `🕵️ ${name}: personal data leaked online!`), 'Career & Fame');
+  }
+  function spawnStalker(name, e) {
+    e.stalker = { level: 15 }; e.stalkerHidden = false;
+    addSafetyTask(e, 'stalker');
+    addLog(e, tr('👁️ Появился навязчивый поклонник (сталкер)', '👁️ An obsessive fan (stalker) appeared'));
+    if (stalkerVisible(e)) toastr.warning(tr(`👁️ ${name}: замечены признаки слежки`, `👁️ ${name}: signs of being followed`), 'Career & Fame');
+  }
+
   function acceptTask(name, e, id) {
     const t = e.tasks.find((x) => x.id === id && !x.done);
     if (!t) return false;
     t.active = true; t.progress = t.progress || 0;
-    addLog(e, `▶️ Взято задание: ${t.title}`);
-    toastr.info(`${name}: взято «${t.title}». Выполняйте его в ролевой!`, 'Career & Fame');
+    addLog(e, tr(`▶️ Взято задание: ${t.title}`, `▶️ Task taken: ${t.title}`));
+    toastr.info(tr(`${name}: взято «${t.title}». Выполняйте его в ролевой!`, `${name}: “${t.title}” taken. Play it out in the roleplay!`), 'Career & Fame');
     return true;
   }
   function dropTask(name, e, id) {
     const t = e.tasks.find((x) => x.id === id && !x.done);
     if (!t) return;
     t.active = false; t.progress = 0;
-    addLog(e, `⏸ Отказ от задания: ${t.title}`);
+    addLog(e, tr(`⏸ Отказ от задания: ${t.title}`, `⏸ Task dropped: ${t.title}`));
   }
   function completeTask(name, e, id) {
     const t = e.tasks.find((x) => x.id === id && !x.done);
@@ -232,12 +286,14 @@
     t.done = true; t.active = false; t.progress = 100;
     const rw = rewardOf(t);
     gainXp(name, e, rw.xp); gainFame(e, rw.fame);
-    addLog(e, `🏆 Задание выполнено: ${t.title} (+${rw.xp} XP, +${rw.fame} славы)`);
-    toastr.success(`🏆 ${name}: «${t.title}» выполнено! +${rw.xp} XP`, 'Career & Fame');
-    if (t.type === 'apology') liftCancel(name, e, '(извинения приняты)');
+    addLog(e, tr(`🏆 Задание выполнено: ${t.title} (+${rw.xp} XP, +${rw.fame} славы)`, `🏆 Task done: ${t.title} (+${rw.xp} XP, +${rw.fame} fame)`));
+    toastr.success(tr(`🏆 ${name}: «${t.title}» выполнено! +${rw.xp} XP`, `🏆 ${name}: “${t.title}” done! +${rw.xp} XP`), 'Career & Fame');
+    if (t.type === 'apology') liftCancel(name, e, tr('(извинения приняты)', '(apology accepted)'));
+    if (t.type === 'safety') { e.privacy = clamp(e.privacy + 25, 0, 100); e.haters = clamp(e.haters - 15, 0, 100); e.doxxLeft = 0; }
+    if (t.type === 'stalker') { e.stalker = null; e.stalkerCool = 60; addLog(e, tr('🛡️ Сталкер больше не беспокоит', '🛡️ The stalker no longer bothers you')); }
   }
 
-  /* ---- Самостоятельный контент (без заданий): стримы, сторис, видео, посты ---- */
+  /* ---- Самостоятельный контент ---- */
   function computeViewers(e, place) {
     const v = (15 + e.fame * 0.6) * PLACES[place].mult * (0.7 + Math.random() * 0.6) * (e.audience.loyal / 50) * (e.cancel ? 0.5 : 1);
     return Math.max(3, Math.round(v));
@@ -245,9 +301,9 @@
   function contentReward(e, format, place, q, ticks) {
     const base = format === 'stream' ? { xp: 6 + Math.min(ticks, 10) * 3, fame: 6 + Math.min(ticks, 10) * 3 } : format === 'video' ? { xp: 12, fame: 12 } : { xp: 6, fame: 6 };
     const qm = [0.5, 0.75, 1, 1.25, 1.5][clamp(q, 1, 5) - 1];
-    const career = hasPlaces(e) ? 1 : 0.6;            // не основной формат для этой профессии
-    const lvl = 1 / (1 + (e.level - 1) * 0.1);        // на высоких уровнях опыт даётся медленнее
-    const fm = 1 / (1 + e.fame / 800);                // и слава
+    const career = hasPlaces(e) ? 1 : 0.6;
+    const lvl = 1 / (1 + (e.level - 1) * 0.1);
+    const fm = 1 / (1 + e.fame / 800);
     return { xp: Math.round(base.xp * PLACES[place].mult * qm * career * lvl), fame: Math.round(base.fame * PLACES[place].mult * qm * career * fm) };
   }
   function finishContent(name, e, format, place, q, ticks, note, viewers) {
@@ -255,20 +311,20 @@
     gainXp(name, e, rw.xp); gainFame(e, rw.fame);
     e.stats[format] = (e.stats[format] || 0) + 1;
     e.audience.loyal = clamp(e.audience.loyal + (q >= 4 ? 2 : q <= 1 ? -3 : 0), 0, 100);
-    const pl = PLACES[place];
-    addLog(e, `${FORMATS[format].split(' ')[0]} ${FORMATS[format].slice(3)} (${pl.icon} ${pl.name.toLowerCase()})${note ? `: ${note}` : ''} — ${viewers ? `~${viewers} зрителей, ` : ''}+${rw.xp} XP, +${rw.fame} славы`);
-    toastr.success(`${FORMATS[format]} — ${name}: +${rw.xp} XP, +${rw.fame} ⭐`, 'Career & Fame');
+    if (format === 'stream' && place === 'street' && e.stalker) e.stalker.level = Math.min(100, e.stalker.level + 5);
+    addLog(e, `${fLabel(format)} (${PLACES[place].icon} ${pName(place).toLowerCase()})${note ? `: ${note}` : ''} — ${viewers ? `~${viewers} ${tr('зрителей', 'viewers')}, ` : ''}+${rw.xp} XP, +${rw.fame} ${tr('славы', 'fame')}`);
+    toastr.success(`${fLabel(format)} — ${name}: +${rw.xp} XP, +${rw.fame} ⭐`, 'Career & Fame');
   }
   function startLive(name, e, place, note) {
     e.live = { place, ticks: 0, viewers: computeViewers(e, place), note: note || '' };
-    addLog(e, `🔴 В эфире (${PLACES[place].icon} ${PLACES[place].name.toLowerCase()}), ~${e.live.viewers} зрителей${note ? `: ${note}` : ''}`);
-    toastr.info(`🔴 ${name} начал(а) стрим`, 'Career & Fame');
+    addLog(e, tr(`🔴 В эфире (${PLACES[place].icon} ${pName(place).toLowerCase()}), ~${e.live.viewers} зрителей${note ? `: ${note}` : ''}`, `🔴 Live (${PLACES[place].icon} ${pName(place).toLowerCase()}), ~${e.live.viewers} viewers${note ? `: ${note}` : ''}`));
+    toastr.info(tr(`🔴 ${name} начал(а) стрим`, `🔴 ${name} went live`), 'Career & Fame');
   }
   function endLive(name, e, q, auto) {
     const l = e.live; if (!l) return;
     e.live = null;
     finishContent(name, e, 'stream', l.place, q || 3, l.ticks, l.note, l.viewers);
-    if (auto) addLog(e, '⏹ Стрим завершён автоматически (слишком долго без обновлений)');
+    if (auto) addLog(e, tr('⏹ Стрим завершён автоматически (слишком долго без обновлений)', '⏹ Stream ended automatically (too long without updates)'));
   }
   function applyContent(name, e, ct) {
     const format = ct && ct.format;
@@ -279,30 +335,35 @@
     if (format === 'stream') {
       if (act === 'start') { if (!e.live) startLive(name, e, place, ct.note); return; }
       if (act === 'end') { if (e.live) endLive(name, e, q); else finishContent(name, e, 'stream', place, q, 2, ct.note); return; }
-      if (!e.live) finishContent(name, e, 'stream', place, q, 2, ct.note);   // короткий стрим «одним куском»
+      if (!e.live) finishContent(name, e, 'stream', place, q, 2, ct.note);
       return;
     }
     const at = ctx().chat?.length || 0;
-    if (!ct.force && at - (e.contentAt[format] ?? -99) < 4) return;          // защита от повторов
+    if (!ct.force && at - (e.contentAt[format] ?? -99) < 4) return;
     e.contentAt[format] = at;
     finishContent(name, e, format, place, q, 0, ct.note);
   }
 
+  /* ---- Спорные ходы ---- */
   function buildReaction(m, d) {
     const parts = [];
     for (const [k, [ic, lb]] of Object.entries(SEG)) {
-      const pos = m.r[k + 'Pos'], neg = m.r[k + 'Neg'], v = d[k];
-      if (v >= 8) parts.push(`${ic} ${lb}: ${pos}`);
-      else if (v <= -8) parts.push(`${ic} ${lb}: ${neg}`);
-      else parts.push(`${ic} ${lb}: мнения разделились — ${pos}; но ${neg}`);
+      const pos = bi(m.r[k + 'Pos']), neg = bi(m.r[k + 'Neg']), v = d[k];
+      if (v >= 8) parts.push(`${ic} ${bi(lb)}: ${pos}`);
+      else if (v <= -8) parts.push(`${ic} ${bi(lb)}: ${neg}`);
+      else parts.push(`${ic} ${bi(lb)}: ${tr('мнения разделились — ', 'opinions are split — ')}${pos}${tr('; но ', '; but ')}${neg}`);
     }
     return parts.join(' | ');
   }
   const effOf = (e, type) => ({ ...MOVES[type].base, ...(MOVES[type].career[e.career] || {}) });
+  // шанс отмены: ручная правка из настроек имеет приоритет над автоматическим расчётом
+  const chanceOverride = (type) => { const v = S().cancelChance[type]; return typeof v === 'number' && !isNaN(v) ? clamp(v, 0, 100) / 100 : null; };
+  const chanceOf = (e, type) => { const o = chanceOverride(type); return o !== null ? o : effOf(e, type).p; };
+
   function applyMove(name, e, type, note) {
     const m = MOVES[type];
     if (!m || !e.career) return;
-    const eff = effOf(e, type);
+    const s = S(); const eff = effOf(e, type);
     const mult = 0.7 + Math.random() * 0.6;
     const blast = 1 + e.fame / 1000;
     const d = {};
@@ -310,31 +371,58 @@
     const fameGain = Math.round(eff.fame * mult * blast);
     gainFame(e, fameGain);
     e.heat = clamp(e.heat + eff.heat, 0, 100);
+    addHate(e, Math.round((m.hate || 10) * mult));
     e.reaction = { type, text: buildReaction(m, d), left: 6 };
     e.moves.unshift({ type, note: note || '', at: ctx().chat?.length || 0 }); e.moves = e.moves.slice(0, 8);
     const sg = (n) => (n >= 0 ? '+' : '') + n;
-    addLog(e, `${m.icon} ${m.name}${note ? ` (${note})` : ''}: слава ${sg(fameGain)}; 👥${sg(d.loyal)} 💼${sg(d.brands)} 📰${sg(d.public)}`);
+    addLog(e, `${m.icon} ${bi(m.name)}${note ? ` (${note})` : ''}: ${tr('слава', 'fame')} ${sg(fameGain)}; 👥${sg(d.loyal)} 💼${sg(d.brands)} 📰${sg(d.public)}`);
     addLog(e, `📣 ${e.reaction.text}`);
-    toastr.info(`${m.icon} ${name}: реакция аудитории — ${e.reaction.text}`, 'Career & Fame', { timeOut: 9000 });
-    const p = clamp(eff.p + (e.audience.loyal < 30 ? 0.15 : 0) + (e.heat >= 60 ? 0.15 : 0), 0, 0.95);
-    if (!e.cancel && Math.random() < p) applyCancel(name, e, eff.sev, m.name);
+    toastr.info(`${m.icon} ${name}: ${tr('реакция аудитории', 'audience reaction')} — ${e.reaction.text}`, 'Career & Fame', { timeOut: 9000 });
+    // ярлык «куколд» при уходе на платформу 18+
+    if (type === 'adult' && s.cuckTag) {
+      const others = names().filter((n) => n !== name);
+      const target = s.cuckTarget === 'partner' && others.length ? others[0] : name;
+      const te = ent(target);
+      if (!te.tags.cuck) {
+        te.tags.cuck = { from: name };
+        addLog(te, tr(`🏷️ Ярлык «куколд»${target !== name ? ` (из-за ухода ${name})` : ''}: мемы и подколки в сети`, `🏷️ “Cuck” label${target !== name ? ` (because ${name} went 18+)` : ''}: memes and jokes online`));
+        toastr.info(tr(`🏷️ ${target}: ярлык «куколд»`, `🏷️ ${target}: “cuck” label`), 'Career & Fame');
+      }
+    }
+    const ov = chanceOverride(type);
+    const p = ov !== null ? ov : clamp(eff.p + (e.audience.loyal < 30 ? 0.15 : 0) + (e.heat >= 60 ? 0.15 : 0), 0, 0.95);
+    if (!e.cancel && Math.random() < p) applyCancel(name, e, eff.sev, bi(m.name));
   }
+
   function tickTurn() {
-    let changed = false;
+    const s = S(); let changed = false;
     for (const n of names()) {
       const e = ent(n);
-      if (e.cancel) { e.cancel.left--; changed = true; if (e.cancel.left <= 0) liftCancel(n, e, '(публика забыла)'); }
+      if (e.cancel) { e.cancel.left--; changed = true; if (e.cancel.left <= 0) liftCancel(n, e, tr('(публика забыла)', '(the public moved on)')); }
       if (e.live) { e.live.ticks++; e.live.viewers = computeViewers(e, e.live.place); changed = true; if (e.live.ticks >= 30) endLive(n, e, 3, true); }
       if (e.reaction) { e.reaction.left--; changed = true; if (e.reaction.left <= 0) e.reaction = null; }
       for (const k of Object.keys(SEG)) { const v = e.audience[k]; if (v < 50) { e.audience[k]++; changed = true; } else if (v > 50) { e.audience[k]--; changed = true; } }
       if (e.heat > 0) {
-        if (!e.cancel && e.heat >= 20 && Math.random() < e.heat / 500) {
-          e.reaction = { type: 'exposed', text: 'Сомнительные рекламные интеграции вскрылись: расследования, разборы, гнев подписчиков', left: 6 };
+        if (!e.cancel && e.heat >= 20 && Math.random() < (e.heat / 500) * (s.exposeScale / 100)) {
+          e.reaction = { type: 'exposed', text: tr('Сомнительные рекламные интеграции вскрылись: расследования, разборы, гнев подписчиков', 'Shady ad deals came to light: investigations, exposés, angry followers'), left: 6 };
           e.audience.public = clamp(e.audience.public - 15, 0, 100); e.audience.loyal = clamp(e.audience.loyal - 10, 0, 100);
-          applyCancel(n, e, e.heat >= 60 ? 3 : 2, 'разоблачение рекламы сомнительных проектов');
+          applyCancel(n, e, e.heat >= 60 ? 3 : 2, tr('разоблачение рекламы сомнительных проектов', 'exposure of shady ad deals'));
           e.heat = Math.max(0, e.heat - 30);
         }
         e.heat = Math.max(0, e.heat - 2); changed = true;
+      }
+      // хейтеры и доксинг
+      if (s.haters) {
+        const floor = Math.round(e.fame / 80);
+        if (e.haters > floor) { e.haters = Math.max(floor, e.haters - 1); changed = true; } else if (e.haters < floor) { e.haters = floor; changed = true; }
+        if (s.doxx && e.doxxLeft <= 0 && e.haters >= 30 && Math.random() < (doxxChance(e) / 100) * 0.05) { startDoxx(n, e); changed = true; }
+      } else e.haters = 0;
+      if (e.doxxLeft > 0) { e.doxxLeft--; changed = true; }
+      // сталкеры
+      if (e.stalkerCool > 0) e.stalkerCool--;
+      if (s.stalkers) {
+        if (!e.stalker && !e.stalkerCool && e.fame >= 120 && Math.random() < STALK_P[s.stalkerFreq || 'normal'] * (1 + e.fame / 1000)) { spawnStalker(n, e); changed = true; }
+        else if (e.stalker) { e.stalker.level = Math.min(100, e.stalker.level + 0.4); changed = true; }
       }
     }
     return changed;
@@ -344,7 +432,7 @@
   async function callLLM(system, user, maxTokens = 500) {
     const s = S(); const c = ctx();
     if (s.mode === 'profile') {
-      if (!s.profileId) throw new Error('Не выбран Connection Profile');
+      if (!s.profileId) throw new Error(tr('Не выбран Connection Profile', 'No Connection Profile selected'));
       const r = await c.ConnectionManagerRequestService.sendRequest(
         s.profileId, [{ role: 'system', content: system }, { role: 'user', content: user }],
         maxTokens, { stream: false, extractData: true, includePreset: false, includeInstruct: false });
@@ -367,7 +455,7 @@
     }
     return out || '';
   }
-  // Достаёт JSON из «грязного» ответа: markdown-обёртки, <think>, текст вокруг, обрезанный конец, лишние запятые.
+
   function extractJson(text) {
     let t = String(text ?? '')
       .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '')
@@ -384,7 +472,6 @@
       else if (ch === '}' || ch === ']') { stack.pop(); if (!stack.length) { end = i; break; } }
     }
     if (end >= 0) return t.slice(start, end + 1);
-    // ответ оборвался — пробуем «достроить»
     let r = t.slice(start);
     if (inStr) r += '"';
     r = r.replace(/[,:\s]+$/, '');
@@ -394,43 +481,42 @@
   function parseJson(text) {
     const raw = extractJson(text);
     const snippet = String(text ?? '').trim().replace(/\s+/g, ' ').slice(0, 160);
-    if (!raw) throw new Error(snippet ? `Модель не вернула JSON. Её ответ: «${snippet}»` : 'Модель вернула пустой ответ (проверьте модель/лимит токенов в настройках)');
+    if (!raw) throw new Error(snippet ? tr(`Модель не вернула JSON. Её ответ: «${snippet}»`, `The model did not return JSON. Its answer: “${snippet}”`) : tr('Модель вернула пустой ответ (проверьте модель/лимит токенов в настройках)', 'The model returned an empty answer (check the model / token limit)'));
     const attempts = [raw, raw.replace(/,\s*([}\]])/g, '$1'), raw.replace(/,\s*([}\]])/g, '$1').replace(/'/g, '"')];
-    for (const a of attempts) { try { return JSON.parse(a); } catch (_) { /* следующая попытка */ } }
-    throw new Error(`Не удалось разобрать JSON. Ответ модели: «${snippet}»`);
+    for (const a of attempts) { try { return JSON.parse(a); } catch (_) { /* next */ } }
+    throw new Error(tr(`Не удалось разобрать JSON. Ответ модели: «${snippet}»`, `Could not parse JSON. Model answer: “${snippet}”`));
   }
   async function askJson(system, user, maxTokens, fallback) {
     const first = await callLLM(system, user, maxTokens);
     try { return parseJson(first); } catch (err1) {
-      console.warn('[Career&Fame] ответ без JSON, повторяю запрос:', first);
-      const strict = system + ' Ответ — СТРОГО один JSON-объект: без пояснений, без markdown, без рассуждений.';
-      const second = await callLLM(strict, user + '\n\nВерни ТОЛЬКО JSON-объект.', maxTokens + 400);
+      console.warn('[Career&Fame] no JSON, retrying:', first);
+      const second = await callLLM(system + ' Reply with EXACTLY ONE JSON object: no explanations, no markdown, no reasoning.', user + '\n\nReturn ONLY the JSON object.', maxTokens + 400);
       try { return parseJson(second); } catch (err2) {
-        console.warn('[Career&Fame] повтор тоже без JSON:', second);
+        console.warn('[Career&Fame] retry has no JSON either:', second);
         const f = fallback && (fallback(second) || fallback(first));
         if (f) return f;
         throw err2;
       }
     }
   }
-  // запасной вариант: если модель ответила обычным текстом — собираем задание из него
   function textToTask(text) {
     const lines = String(text ?? '').replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').split('\n').map((l) => l.trim()).filter(Boolean);
     if (!lines.length) return null;
-    const clean = (l) => l.replace(/^[#>*\-\s"«]+|[*"»\s]+$/g, '').replace(/^(название|задание|title)\s*[:\-—]\s*/i, '');
+    const clean = (l) => l.replace(/^[#>*\-\s"«]+|[*"»\s]+$/g, '').replace(/^(название|задание|title|task)\s*[:\-—]\s*/i, '');
     const steps = lines.map((l) => l.match(/^(?:\d+[.)]|[-•*])\s+(.+)/)?.[1]).filter(Boolean).map(clean).slice(0, 5);
     const plain = lines.filter((l) => !/^(?:\d+[.)]|[-•*])\s+/.test(l));
     const hasTitleKey = lines.some((l) => /^[#*\s]*(название|title)\s*[:\-—]/i.test(l));
-    if (!plain.length || (!steps.length && !hasTitleKey)) return null; // отказ/болтовня — не превращаем в задание
-    return { title: clean(plain[0]).slice(0, 80) || 'Задание', desc: plain[1] ? clean(plain[1]) : '', steps, xp: 20, fame: 10 };
+    if (!plain.length || (!steps.length && !hasTitleKey)) return null;
+    return { title: clean(plain[0]).slice(0, 80) || tr('Задание', 'Task'), desc: plain[1] ? clean(plain[1]) : '', steps, xp: 20, fame: 10 };
   }
+  const outLang = () => `Write all human-readable text fields in ${LANG() === 'en' ? 'English' : 'Russian'}.`;
 
   function stateSummary() {
     return names().map((n) => {
       const e = ent(n);
       const open = e.tasks.filter((t) => !t.done)
-        .map((t) => `[${t.id}] «${t.title}» (${t.active ? 'ВЗЯТО' : 'не взято'}${placeInfo(t)}; шаги: ${t.steps.map((x, i) => `${i + 1}.${x.done ? '[x]' : '[ ]'} ${x.text}`).join(' ')})`).join('; ') || 'нет';
-      return `- ${n}: ${titleOf(e)}, ур.${e.level}, слава ${e.fame} (${fameTier(e.fame)}), ${e.cancel ? 'ОТМЕНЁН (' + e.cancel.reason + ')' : 'в порядке'}; аудитория: фанаты ${mood(e.audience.loyal)}, бренды ${mood(e.audience.brands)}, публика ${mood(e.audience.public)}; недавние спорные ходы: ${e.moves.slice(0, 3).map((x) => MOVES[x.type]?.name).join(', ') || 'нет'}; ${e.live ? `ИДЁТ СТРИМ (${PLACES[e.live.place].name}, сообщений ${e.live.ticks}); ` : ''}задания: ${open}`;
+        .map((t) => `[${t.id}] "${t.title}" (${t.active ? 'TAKEN' : 'not taken'}${placeInfo(t)}; steps: ${t.steps.map((x, i) => `${i + 1}.${x.done ? '[x]' : '[ ]'} ${x.text}`).join(' ')})`).join('; ') || 'none';
+      return `- ${n}: ${titleOf(e)}, lvl ${e.level}, fame ${e.fame} (${fameTier(e.fame, 'en')}), ${e.cancel ? 'CANCELLED (' + e.cancel.reason + ')' : 'fine'}; audience: fans ${mood(e.audience.loyal, 'en')}, brands ${mood(e.audience.brands, 'en')}, public ${mood(e.audience.public, 'en')}; haters ${e.haters}/100${e.doxxLeft > 0 ? ', DOXXED NOW' : ''}${e.stalker ? ', has a stalker' : ''}; recent controversial moves: ${e.moves.slice(0, 3).map((x) => bi(MOVES[x.type]?.name || x.type, 'en')).join(', ') || 'none'}; ${e.live ? `LIVE STREAM NOW (${bi(PLACES[e.live.place].name, 'en')}, ${e.live.ticks} msgs); ` : ''}tasks: ${open}`;
     }).join('\n');
   }
 
@@ -440,26 +526,28 @@
     const active = names().filter((n) => ent(n).career);
     if (!active.length) return;
     const recent = c.chat.slice(-6).map((m) => `${m.name}: ${m.mes}`).join('\n\n');
-    const system = 'Ты — движок карьеры и славы в ролевой игре. Отвечай ТОЛЬКО валидным JSON без пояснений.';
-    const user = `Состояние:\n${stateSummary()}\n\nПоследние сообщения:\n${recent}\n\n` +
-      `Оцени, что произошло с карьерой/репутацией (только ${active.join(', ')}). Верни JSON:\n` +
-      `{"events":[{"who":"имя","xp":-30..40,"fame":-50..80,"summary":"кратко",` +
-      `"tasks":[{"id":"id задания из списка","steps_done":[номера шагов, ЗАВЕРШЁННЫХ в тексте]}],` +
-      `"cancel":null или {"severity":1-3,"reason":"за что"},"controversy":null или {"type":"adult|casino|scam|crypto|fake","note":"кратко"},"content":null или {"format":"stream|stories|video|post","place":"home|street|event","action":"start|end|single","quality":1-5,"note":"кратко"},"lift_cancel":false}]}\n` +
-      `ПРАВИЛА ЗАДАНИЙ: в steps_done указывай номера шагов, которые персонаж/пользователь УЖЕ ФАКТИЧЕСКИ ЗАВЕРШИЛ в сообщениях (не «собирается», не «планирует»); шаги с [x] не повторяй; ` +
-      `это работает и для «не взятых» заданий, если герой сам за них взялся. Последний шаг отмечай, только когда герой действительно закончил дело и покинул место/сцену/довёл до логического конца ` +
-      `(например: приехал на съёмку → снялся в ролике → закончил и уехал). Задание завершится автоматически, когда отмечены все шаги, и награда выдаётся сама, ` +
-      `Если у задания указано МЕСТО (дома / на улице / на мероприятии), шаги засчитываются только когда действия происходят именно там и с соблюдением условий; нарушение условий (съёмка людей без согласия, трансляция на мероприятии без разрешения и т.п.) — повод для cancel степени 1. ` +
-      `поэтому xp/fame в событии — лишь за ДРУГИЕ события. Если ничего значимого — {"events":[]}. Отмена только за реально скандальные поступки. ` +
-      `controversy ставь, только когда персонаж РЕАЛЬНО сделал или анонсировал такой шаг: adult — уход на платформу 18+ вроде OnlyFans; casino — реклама казино/лутбоксов/ставок; ` +
-      `scam — реклама мошенников/скам-проектов; crypto — реклама крипто-пирамид/памп-схем; fake — фейковые розыгрыши/накрутка. ` +
-      `Не засчитывай разговоры, угрозы и отказы, не повторяй уже учтённые недавние ходы. Если персонаж несовершеннолетний — всегда null. ` +
-      `content — САМОСТОЯТЕЛЬНЫЙ контент вне заданий, по собственной инициативе персонажа/пользователя: stream — action start, когда включил трансляцию, и end, когда закончил (пока стрим идёт — null); ` +
-      `stories/video/post — action single, один раз за публикацию; place — где это происходит; quality 1–5 — насколько удачно это показано в тексте. Не засчитывай планы и разговоры; ` +
-      `если действия являются шагами активного задания — используй tasks, а не content. Требования места действуют и здесь (нарушение — повод для cancel степени 1).`;
+    const system = 'You are the career & fame engine of a roleplay. Reply with VALID JSON only, no commentary.';
+    const user = `State:\n${stateSummary()}\n\nRecent messages:\n${recent}\n\n` +
+      `Evaluate what happened to the career/reputation of ${active.join(', ')} only. Return JSON:\n` +
+      `{"events":[{"who":"name","xp":-30..40,"fame":-50..80,"summary":"short",` +
+      `"tasks":[{"id":"task id from the list","steps_done":[numbers of steps FINISHED in the text]}],` +
+      `"cancel":null or {"severity":1-3,"reason":"why"},` +
+      `"controversy":null or {"type":"adult|casino|scam|crypto|fake|guru","note":"short"},` +
+      `"content":null or {"format":"stream|stories|video|post","place":"home|street|event","action":"start|end|single","quality":1-5,"note":"short"},` +
+      `"haters":null or {"delta":-20..30,"doxx":false,"note":"short"},` +
+      `"stalker":null or {"action":"appear|escalate|resolve","note":"short"},"lift_cancel":false}]}\n` +
+      `RULES. TASKS: in steps_done list only steps the character/user has ALREADY ACTUALLY COMPLETED in the messages (not "going to", not planning); do not repeat steps marked [x]; this also works for "not taken" tasks if the hero started them on their own. ` +
+      `Mark the last step only when the hero really finished and left the place/scene (e.g. arrived at the shoot -> filmed -> finished and left). The task completes automatically when all steps are marked and the reward is given automatically, so xp/fame in the event are only for OTHER things. ` +
+      `If a task has a PLACE (home / outdoors / event), steps count only when the actions happen there and the conditions are respected; violating the conditions (filming people without consent, streaming at an event without permission) is a reason for a severity-1 cancel. ` +
+      `CANCEL only for truly scandalous acts. If nothing relevant happened return {"events":[]}. ` +
+      `CONTROVERSY only when the character REALLY did or announced it: adult = moving to an 18+ platform like OnlyFans; casino = advertising casinos/lootboxes/betting; scam = advertising scammers/fraudulent projects; crypto = advertising crypto pyramids/pump schemes; fake = fake giveaways/botting; guru = selling overpriced courses/marathons with unrealistic income promises (info-gypsy). Not talk, threats or refusals; do not repeat recent moves. ` +
+      `CONTENT = SELF-INITIATED content outside tasks: stream -> action "start" when they go live and "end" when they finish (while it continues -> null); stories/video/post -> action "single", once per publication; place = where it happens; quality 1-5 = how well it is shown in the text. Not plans or talk; if the actions are steps of an active task use tasks, not content. Place conditions apply here too. ` +
+      `HATERS only when the text shows harassment/hate campaigns (delta > 0) or calming down (delta < 0); set doxx true ONLY if personal data was actually leaked in the story. STALKER: appear = an obsessive follower shows up; escalate = gets worse; resolve = dealt with. ` +
+      `If a character is a minor, always return null for controversy, content, haters and stalker. ${outLang()}`;
     let data;
-    try { data = await askJson(system, user, 900); }
-    catch (err) { if (manual) throw err; console.warn('[Career&Fame] авто-анализ пропущен:', err.message); return; }
+    try { data = await askJson(system, user, 1000); }
+    catch (err) { if (manual) throw err; console.warn('[Career&Fame] auto-analysis skipped:', err.message); return; }
+    const s = S();
     for (const ev of data.events || []) {
       if (!active.includes(ev.who)) continue;
       const e = ent(ev.who);
@@ -470,12 +558,12 @@
         if (!idx.length) continue;
         const before = t.steps.filter((x) => x.done).length;
         const upto = Math.max(...idx);
-        for (let i = 0; i <= upto; i++) t.steps[i].done = true; // последующий шаг подразумевает предыдущие
+        for (let i = 0; i <= upto; i++) t.steps[i].done = true;
         const after = t.steps.filter((x) => x.done).length;
         if (after === before) continue;
-        if (!t.active) { t.active = true; addLog(e, `▶️ Герой сам взялся за задание: ${t.title}`); }
+        if (!t.active) { t.active = true; addLog(e, tr(`▶️ Герой сам взялся за задание: ${t.title}`, `▶️ The hero started the task on their own: ${t.title}`)); }
         t.progress = progressOf(t);
-        addLog(e, `☑ «${t.title}»: шагов ${after}/${t.steps.length}`);
+        addLog(e, tr(`☑ «${t.title}»: шагов ${after}/${t.steps.length}`, `☑ “${t.title}”: steps ${after}/${t.steps.length}`));
         if (t.steps.every((x) => x.done)) completeTask(ev.who, e, t.id);
       }
       gainXp(ev.who, e, clamp(parseInt(ev.xp) || 0, -30, 40));
@@ -483,6 +571,14 @@
       if (ev.content) applyContent(ev.who, e, ev.content);
       const cv = ev.controversy;
       if (cv?.type && MOVES[cv.type] && !e.moves.some((x) => x.type === cv.type && c.chat.length - x.at < 6)) applyMove(ev.who, e, cv.type, cv.note);
+      if (ev.haters && s.haters) { addHate(e, clamp(parseInt(ev.haters.delta) || 0, -20, 30)); if (ev.haters.doxx) startDoxx(ev.who, e); if (ev.haters.note) addLog(e, `😡 ${ev.haters.note}`); }
+      if (ev.stalker && s.stalkers) {
+        const a = ev.stalker.action;
+        if (a === 'appear' && !e.stalker) spawnStalker(ev.who, e);
+        else if (a === 'escalate' && e.stalker) e.stalker.level = Math.min(100, e.stalker.level + 15);
+        else if (a === 'resolve' && e.stalker) { e.stalker = null; e.stalkerCool = 60; addLog(e, tr('🛡️ Сталкер больше не беспокоит', '🛡️ The stalker no longer bothers you')); }
+        if (ev.stalker.note && stalkerVisible(e)) addLog(e, `👁️ ${ev.stalker.note}`);
+      }
       if (ev.cancel) applyCancel(ev.who, e, ev.cancel.severity, ev.cancel.reason);
       else if (ev.lift_cancel) liftCancel(ev.who, e);
       if (ev.summary) addLog(e, `• ${ev.summary}`);
@@ -492,38 +588,35 @@
 
   async function genTask(name, opts = {}) {
     const e = ent(name);
-    if (!careerOf(e)) { toastr.warning('Сначала выберите карьеру', 'Career & Fame'); return; }
+    if (!careerOf(e)) { toastr.warning(tr('Сначала выберите карьеру', 'Choose a career first'), 'Career & Fame'); return; }
     let place, format, reqs = [];
     if (hasPlaces(e)) {
       place = PLACES[opts.place] ? opts.place : rollPlace();
       format = FORMATS[opts.format] ? opts.format : pickRnd(Object.keys(FORMATS));
       reqs = reqsFor(place, format);
     }
-    const where = place ? `Формат: ${FORMATS[format]}. Место: ${PLACES[place].name}. Условия этого места: ${reqs.join('; ')}. ` +
-      `Задание ДОЛЖНО происходить именно там, а шаги — учитывать эти условия (подготовка, съёмка/трансляция, завершение). ` : '';
-    const system = 'Ты придумываешь задания для карьеры в ролевой игре. Отвечай ТОЛЬКО валидным JSON.';
-    const user = `Профессия: ${careerOf(e).name}, звание: ${titleOf(e)}, уровень ${e.level}, слава ${e.fame}.\n` +
-      `Уже есть: ${e.tasks.filter((t) => !t.done).map((t) => t.title).join(', ') || 'нет'}.\n` + where +
-      `Придумай одно новое задание, которое можно отыграть В СЮЖЕТЕ (конкретные действия). ` +
-      `Задание — это законченный эпизод: от начала до завершения (например: приехать на съёмку → сняться в ролике → закончить и уехать). 3–5 шагов, ПОСЛЕДНИЙ шаг — завершение (герой закончил дело и покинул место/сцену). ` +
-      `JSON: {"title":"...","desc":"...","steps":["шаг 1","шаг 2","шаг 3"],"xp":10-60,"fame":0-60}`;
+    const where = place ? `Format: ${bi(FORMATS[format].n, 'en')}. Place: ${bi(PLACES[place].name, 'en')}. Conditions of this place: ${(REQS[place][format] || []).map((x) => bi(x, 'en')).join('; ')}. ` +
+      `The task MUST take place there, and the steps must respect these conditions (preparation, shooting/streaming, wrap-up). ` : '';
+    const system = 'You invent tasks for a career in a roleplay game. Reply with VALID JSON only.';
+    const user = `Profession: ${bi(CAREERS[e.career].name, 'en')}, rank: ${bi(CAREERS[e.career].ladder[clamp(e.level, 1, 6) - 1], 'en')}, level ${e.level}, fame ${e.fame}.\n` +
+      `Existing tasks: ${e.tasks.filter((t) => !t.done).map((t) => t.title).join(', ') || 'none'}.\n` + where +
+      `Invent ONE new task that can be played out IN THE STORY (concrete actions). A task is a complete episode from start to finish (e.g. arrive at the shoot -> film the clip -> finish and leave). 3-5 steps, the LAST step is the wrap-up (the hero finished and left the place/scene). ${outLang()} ` +
+      `JSON: {"title":"...","desc":"...","steps":["step 1","step 2","step 3"],"xp":10-60,"fame":0-60}`;
     const d = await askJson(system, user, 900, textToTask);
-    const t = { id: uid(), type: 'task', src: 'ai', title: String(d.title || 'Задание'), desc: String(d.desc || ''),
+    const t = { id: uid(), type: 'task', src: 'ai', career: e.career, title: String(d.title || tr('Задание', 'Task')), desc: String(d.desc || ''),
       steps: Array.isArray(d.steps) ? d.steps.slice(0, 6).map(String) : [],
       xp: clamp(parseInt(d.xp) || 20, 5, 80), fame: clamp(parseInt(d.fame) || 10, 0, 80), done: false, active: false, progress: 0 };
     if (place) { t.place = place; t.format = format; t.reqs = reqs; }
     e.tasks.push(t);
-    toastr.success(place ? `Новое задание: ${PLACES[place].icon} ${PLACES[place].name}, ${FORMATS[format]}` : 'Новое задание добавлено в «Доступные»', 'Career & Fame');
+    toastr.success(place ? tr(`Новое задание: ${PLACES[place].icon} ${pName(place)}, ${fLabel(format)}`, `New task: ${PLACES[place].icon} ${pName(place)}, ${fLabel(format)}`) : tr('Новое задание добавлено в «Доступные»', 'New task added to “Available”'), 'Career & Fame');
   }
 
-  // Ручное задание: ИИ разбивает его на шаги (запасные шаги ставятся сразу, так что оно работает и без ответа модели)
   async function genStepsFor(name, id) {
     const e = ent(name); const t = e.tasks.find((x) => x.id === id);
     if (!t) return;
-    const where = t.place ? `Место: ${PLACES[t.place].name}; формат: ${FORMATS[t.format] || 'любой'}; условия: ${(t.reqs || []).join('; ')}. Шаги должны учитывать место и условия. ` : '';
-    const system = 'Ты разбиваешь задания для ролевой игры на шаги. Отвечай ТОЛЬКО валидным JSON.';
-    const user = `Задание: «${t.title}». ${t.desc || ''}\n${where}Разбей его на 2–5 последовательных шагов, которые можно отыграть в сюжете. ` +
-      `ПОСЛЕДНИЙ шаг — завершение: герой закончил дело и покинул место/сцену. JSON: {"steps":["шаг 1","шаг 2"]}`;
+    const where = t.place ? `Place: ${bi(PLACES[t.place].name, 'en')}; format: ${t.format ? bi(FORMATS[t.format].n, 'en') : 'any'}; conditions: ${(REQS[t.place]?.[t.format] || []).map((x) => bi(x, 'en')).join('; ')}. The steps must respect the place and conditions. ` : '';
+    const system = 'You split roleplay game tasks into steps. Reply with VALID JSON only.';
+    const user = `Task: "${t.title}". ${t.desc || ''}\n${where}Split it into 2-5 sequential steps that can be played out in the story. The LAST step is the wrap-up: the hero finished and left the place/scene. ${outLang()} JSON: {"steps":["step 1","step 2"]}`;
     const d = await askJson(system, user, 700, (txt) => { const x = textToTask(txt); return x && x.steps.length ? { steps: x.steps } : null; });
     const fresh = ent(name).tasks.find((x) => x.id === id);
     if (fresh && Array.isArray(d.steps) && d.steps.length >= 2 && !fresh.steps.some((x) => x.done)) {
@@ -538,88 +631,116 @@
     const lines = names().map((n) => {
       const e = ent(n);
       if (!e.career) return null;
-      let l = `${n}: ${titleOf(e)} (ур. ${e.level}), известность — ${fameTier(e.fame)} (${e.fame}/1000).`;
-      if (e.cancel) l += ` СЕЙЧАС ПОД ОТМЕНОЙ из-за «${e.cancel.reason}»: публика, бренды и коллеги реагируют враждебно или дистанцируются.`;
-      l += `\n  Аудитория: фанаты ${mood(e.audience.loyal)}, бренды и спонсоры ${mood(e.audience.brands)}, публика и СМИ ${mood(e.audience.public)}.`;
-      if (e.reaction) l += `\n  Недавняя реакция аудитории (${e.reaction.text}). Покажи эти РАЗНЫЕ реакции в сюжете: комментарии, отписки/донаты, письма от агентов и спонсоров, новости. Фокус — социальные последствия.`;
-      if (e.heat >= 50) l += ` Есть риск разоблачения: ходят слухи, журналисты и разоблачители присматриваются.`;
-      if (e.live) l += `\n  СЕЙЧАС ИДЁТ СТРИМ (${PLACES[e.live.place].icon} ${PLACES[e.live.place].name}), зрителей ~${e.live.viewers}. ${n === c.name1 ? `Не описывай действия ${n} за него: показывай чат, донаты, реакции зрителей и окружение.` : 'Показывай ход стрима: чат, донаты, реакции зрителей, помехи.'} Условия места: ${reqsFor(e.live.place, 'stream').join(', ')}.`;
+      const isUser = n === c.name1;
+      let l = tr(`${n}: ${titleOf(e)} (ур. ${e.level}), известность — ${fameTier(e.fame)} (${e.fame}/1000).`, `${n}: ${titleOf(e)} (lvl ${e.level}), fame — ${fameTier(e.fame)} (${e.fame}/1000).`);
+      const others = Object.keys(e.progress).filter((k) => k !== e.career && e.progress[k].level > 0);
+      if (others.length) l += tr(` Прошлые карьеры: ${others.map((k) => `${careerName(k)} (ур. ${e.progress[k].level})`).join(', ')}.`, ` Past careers: ${others.map((k) => `${careerName(k)} (lvl ${e.progress[k].level})`).join(', ')}.`);
+      if (e.cancel) l += tr(` СЕЙЧАС ПОД ОТМЕНОЙ из-за «${e.cancel.reason}»: публика, бренды и коллеги реагируют враждебно или дистанцируются.`, ` CURRENTLY CANCELLED over “${e.cancel.reason}”: the public, brands and colleagues react with hostility or distance themselves.`);
+      l += tr(`\n  Аудитория: фанаты ${mood(e.audience.loyal)}, бренды и спонсоры ${mood(e.audience.brands)}, публика и СМИ ${mood(e.audience.public)}.`, `\n  Audience: fans ${mood(e.audience.loyal)}, brands & sponsors ${mood(e.audience.brands)}, public & media ${mood(e.audience.public)}.`);
+      if (e.reaction) l += tr(`\n  Недавняя реакция аудитории (${e.reaction.text}). Покажи эти РАЗНЫЕ реакции в сюжете: комментарии, отписки/донаты, письма от агентов и спонсоров, новости. Фокус — социальные последствия.`, `\n  Recent audience reaction (${e.reaction.text}). Show these DIFFERENT reactions in the story: comments, unsubscribes/donations, messages from agents and sponsors, news. Focus on social consequences.`);
+      if (e.heat >= 50) l += tr(' Есть риск разоблачения: ходят слухи, журналисты и разоблачители присматриваются.', ' There is a risk of exposure: rumors circulate, journalists and debunkers are watching.');
+      if (s.haters && e.haters >= 40) l += tr(`\n  Хейтеры активны (${e.haters}/100): травля в комментариях, анонимные сообщения, фейки; на это реагируют фанаты и модераторы.`, `\n  Haters are active (${e.haters}/100): harassment in comments, anonymous messages, fakes; fans and moderators react.`);
+      if (s.doxx && e.doxxLeft > 0) l += tr(`\n  Личные данные ${n} утекли в сеть (доксинг): тревога, навязчивые сообщения, поддержка фанатов и платформ. Показывай последствия и пути защиты, без подробностей о том, как именно данные раскрывают.`, `\n  ${n}'s personal data leaked online (doxxing): anxiety, intrusive messages, support from fans and platforms. Show the consequences and ways to protect oneself, without details on how data gets exposed.`);
+      else if (s.doxx && s.haters && doxxChance(e) >= 50) l += tr(` Риск доксинга высокий (${doxxChance(e)}%).`, ` Doxxing risk is high (${doxxChance(e)}%).`);
+      if (stalkerVisible(e)) l += tr(`\n  За ${n} присматривает навязчивый поклонник (уровень ${Math.round(e.stalker.level)}/100): странные сообщения, «случайные» встречи. Упоминай это редко и ненавязчиво — не чаще раза в несколько постов.`, `\n  An obsessive fan watches ${n} (level ${Math.round(e.stalker.level)}/100): odd messages, “random” encounters. Mention it rarely and subtly — no more than once every few posts.`);
+      if (e.tags.cuck) {
+        const from = e.tags.cuck.from;
+        l += from !== n
+          ? tr(`\n  На ${n} в сети навесили ярлык «куколд» из-за ухода ${from} на платформу 18+: мемы и подколки. Показывай как социальную реакцию окружающих, без откровенных деталей.`, `\n  ${n} got a “cuck” label online because ${from} went to an 18+ platform: memes and jokes. Show it as a social reaction of others, without explicit details.`)
+          : tr(`\n  На ${n} в сети навесили ярлык «куколд» после ухода на платформу 18+: мемы и подколки. Показывай как социальную реакцию окружающих, без откровенных деталей.`, `\n  ${n} got a “cuck” label online after going to an 18+ platform: memes and jokes. Show it as a social reaction of others, without explicit details.`);
+      }
+      if (e.live) l += tr(`\n  СЕЙЧАС ИДЁТ СТРИМ (${PLACES[e.live.place].icon} ${pName(e.live.place)}), зрителей ~${e.live.viewers}. ${isUser ? `Не описывай действия ${n} за него: показывай чат, донаты, реакции зрителей и окружение.` : 'Показывай ход стрима: чат, донаты, реакции зрителей, помехи.'} Условия места: ${reqsFor(e.live.place, 'stream').join(', ')}.`,
+        `\n  A STREAM IS LIVE (${PLACES[e.live.place].icon} ${pName(e.live.place)}), ~${e.live.viewers} viewers. ${isUser ? `Do not narrate ${n}'s actions for them: show chat, donations, viewer reactions and the surroundings.` : 'Show the stream: chat, donations, viewer reactions, glitches.'} Place conditions: ${reqsFor(e.live.place, 'stream').join(', ')}.`);
       const act = e.tasks.filter((t) => t.active && !t.done);
       if (act.length) {
-        const isUser = n === c.name1;
-        l += '\n  Задания в работе: ' + act.map((t) => { const nx = t.steps.find((x) => !x.done); return `«${t.title}» — ${t.desc || ''}${t.place && PLACES[t.place] ? ` Место: ${PLACES[t.place].name}; условия: ${(t.reqs || []).join(', ')}.` : ''} Шаги: ${stepsLine(t)}.${nx ? ` Сейчас нужно: ${nx.text}.` : ''}`; }).join(' ');
-        l += ' Задание завершается, только когда пройден последний шаг (герой закончил дело и покинул место/сцену); не пропускай шаги и доводи задание до логичного завершения. Если у задания указано место — действия происходят именно там, с учётом условий (показывай подготовку и соблюдение или нарушение условий).';
+        l += tr('\n  Задания в работе: ', '\n  Tasks in progress: ') + act.map((t) => { const nx = t.steps.find((x) => !x.done);
+          return tr(`«${t.title}» — ${t.desc || ''}${t.place && PLACES[t.place] ? ` Место: ${pName(t.place)}; условия: ${(t.reqs || []).join(', ')}.` : ''} Шаги: ${stepsLine(t)}.${nx ? ` Сейчас нужно: ${nx.text}.` : ''}`,
+            `“${t.title}” — ${t.desc || ''}${t.place && PLACES[t.place] ? ` Place: ${pName(t.place)}; conditions: ${(t.reqs || []).join(', ')}.` : ''} Steps: ${stepsLine(t)}.${nx ? ` Next: ${nx.text}.` : ''}`); }).join(' ');
+        l += tr(' Задание завершается, только когда пройден последний шаг (герой закончил дело и покинул место/сцену); не пропускай шаги и доводи задание до логичного завершения. Если у задания указано место — действия происходят именно там, с учётом условий (показывай подготовку и соблюдение или нарушение условий).',
+          ' A task ends only when its last step is done (the hero finished and left the place/scene); do not skip steps and bring the task to a logical end. If a place is given, the actions happen there with the conditions in mind (show preparation and the conditions being respected or violated).');
         if (s.demandActions) {
           l += isUser
-            ? ` ${n} выполняет это сам в своих постах: не описывай его действия за него, а показывай мир, реакции, помехи и последствия; успех не засчитывай, пока он сам не отыграл нужные действия.`
-            : ` Показывай в постах конкретные действия ${n} по этим заданиям (подготовка, процесс, препятствия, результат); не объявляй успех без описанных действий и не завершай сложное задание за один пост.`;
+            ? tr(` ${n} выполняет это сам в своих постах: не описывай его действия за него, а показывай мир, реакции, помехи и последствия; успех не засчитывай, пока он сам не отыграл нужные действия.`, ` ${n} does this on their own in their posts: do not narrate their actions for them, show the world, reactions, obstacles and consequences; do not count success until they act it out.`)
+            : tr(` Показывай в постах конкретные действия ${n} по этим заданиям (подготовка, процесс, препятствия, результат); не объявляй успех без описанных действий и не завершай сложное задание за один пост.`, ` Show ${n}'s concrete actions for these tasks in the posts (preparation, process, obstacles, result); do not declare success without described actions and do not finish a complex task in one post.`);
         }
       }
-      const avail = e.tasks.filter((t) => !t.done && !t.active).slice(0, 3);
-      if (avail.length) l += `\n  Доступные задания (ещё не взяты): ${avail.map((t) => `«${t.title}»`).join(', ')}. Если в сюжете герой сам берётся за такое задание — покажи его действия.`;
+      const avail = e.tasks.filter((t) => !t.done && !t.active && t.type !== 'safety' && t.type !== 'stalker').slice(0, 3);
+      if (avail.length) l += tr(`\n  Доступные задания (ещё не взяты): ${avail.map((t) => `«${t.title}»`).join(', ')}. Если в сюжете герой сам берётся за такое задание — покажи его действия.`, `\n  Available tasks (not taken yet): ${avail.map((t) => `“${t.title}”`).join(', ')}. If the hero takes one up on their own in the story, show their actions.`);
       return l;
     }).filter(Boolean);
-    c.setExtensionPrompt(MODULE, lines.length ? `[Карьера и слава. Учитывай в повествовании:\n${lines.join('\n')}]` : '', 1, 1, false, 0);
+    c.setExtensionPrompt(MODULE, lines.length ? tr(`[Карьера и слава. Учитывай в повествовании:\n${lines.join('\n')}]`, `[Career & fame. Take into account in the narration:\n${lines.join('\n')}]`) : '', 1, 1, false, 0);
   }
 
   /* =====================  ТЕЛЕФОН (UI)  ===================== */
   const ui = { open: false, screen: 'home', who: null, tab: 'avail', form: false, busy: false, models: [], pickPlace: 'rand', pickFormat: 'rand', cPlace: 'home', cFormat: 'stream' };
   const APPS = [
-    { id: 'career',   icon: '💼', name: 'Карьера',    bg: 'linear-gradient(135deg,#4facfe,#2563eb)' },
-    { id: 'tasks',    icon: '🎯', name: 'Задания',    bg: 'linear-gradient(135deg,#43e97b,#0d9f6e)' },
-    { id: 'content',  icon: '📡', name: 'Контент',    bg: 'linear-gradient(135deg,#f472b6,#db2777)' },
-    { id: 'feed',     icon: '📰', name: 'События',    bg: 'linear-gradient(135deg,#fbbf24,#f97316)' },
-    { id: 'aud',      icon: '👥', name: 'Аудитория',  bg: 'linear-gradient(135deg,#c084fc,#7c3aed)' },
-    { id: 'moves',    icon: '🎭', name: 'Спорное',    bg: 'linear-gradient(135deg,#fb7185,#e11d48)' },
-    { id: 'settings', icon: '⚙️', name: 'Настройки',  bg: 'linear-gradient(135deg,#94a3b8,#475569)' },
+    { id: 'career',   icon: '💼', name: 'Карьера|Career',       bg: 'linear-gradient(135deg,#4facfe,#2563eb)' },
+    { id: 'tasks',    icon: '🎯', name: 'Задания|Tasks',        bg: 'linear-gradient(135deg,#43e97b,#0d9f6e)' },
+    { id: 'content',  icon: '📡', name: 'Контент|Content',      bg: 'linear-gradient(135deg,#f472b6,#db2777)' },
+    { id: 'feed',     icon: '📰', name: 'События|Events',       bg: 'linear-gradient(135deg,#fbbf24,#f97316)' },
+    { id: 'aud',      icon: '👥', name: 'Аудитория|Audience',   bg: 'linear-gradient(135deg,#c084fc,#7c3aed)' },
+    { id: 'threats',  icon: '🛡️', name: 'Угрозы|Threats',       bg: 'linear-gradient(135deg,#f87171,#b91c1c)' },
+    { id: 'moves',    icon: '🎭', name: 'Спорное|Controversy',  bg: 'linear-gradient(135deg,#fb7185,#e11d48)' },
+    { id: 'settings', icon: '⚙️', name: 'Настройки|Settings',   bg: 'linear-gradient(135deg,#94a3b8,#475569)' },
   ];
+  const TITLES = { home: 'Career & Fame', career: '💼 Карьера|💼 Career', tasks: '🎯 Задания|🎯 Tasks', content: '📡 Контент|📡 Content', feed: '📰 События|📰 Events', aud: '👥 Аудитория|👥 Audience',
+    threats: '🛡️ Угрозы и ярлыки|🛡️ Threats & labels', moves: '🎭 Спорные ходы|🎭 Controversial moves', settings: '⚙️ Настройки|⚙️ Settings' };
   const E = esc;
   const clock = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   function curWho() { const ns = names(); if (!ns.includes(ui.who)) ui.who = ns[0] || null; return ui.who; }
   const btn = (act, label, id, cls = '', v = '') => `<button class="cfp-btn ${cls}" data-act="${act}"${id ? ` data-id="${E(id)}"` : ''}${v !== '' ? ` data-v="${E(v)}"` : ''}>${label}</button>`;
   const bar = (pct, color) => `<div class="cfp-bar"><i style="width:${clamp(pct, 0, 100)}%;background:${color}"></i></div>`;
   const empty = (txt, extra = '') => `<div class="cfp-empty">${txt}${extra}</div>`;
-  const needCareer = (e) => empty('Сначала выберите карьеру', `<div>${btn('open', '💼 Выбрать карьеру', '', 'pri', 'career')}</div>`);
+  const needCareer = () => empty(tr('Сначала выберите карьеру', 'Choose a career first'), `<div>${btn('open', tr('💼 Выбрать карьеру', '💼 Choose a career'), '', 'pri', 'career')}</div>`);
+  const chipsHtml = (items, cur, act) => `<div class="cfp-chips">${items.map(([k, l]) => `<span class="cfp-chip ${cur === k ? 'on' : ''}" data-act="${act}" data-v="${k}">${l}</span>`).join('')}</div>`;
+  const statsLine = (e) => `🔴 ${tr('Стримов', 'Streams')}: ${e.stats.stream} · 📸 ${tr('Сторис', 'Stories')}: ${e.stats.stories} · 🎥 ${tr('Видео', 'Videos')}: ${e.stats.video} · 🖼️ ${tr('Постов', 'Posts')}: ${e.stats.post}`;
 
   function screenHome(e, who) {
-    if (!e) return empty('Откройте чат с персонажем');
+    const plates = [];
+    if (e.live) plates.push(tr('🔴 В эфире', '🔴 Live'));
+    if (e.tags.cuck) plates.push(tr('🏷️ Куколд', '🏷️ Cuck'));
+    if (stalkerVisible(e)) plates.push(tr('👁️ Сталкер', '👁️ Stalker'));
+    if (e.doxxLeft > 0) plates.push(tr('🕵️ Доксинг', '🕵️ Doxxed'));
     const prof = `<div class="cfp-card cfp-prof"><div class="cfp-ava">${iconOf(e)}</div><div style="flex:1;min-width:0">
-      <b>${E(who)}</b><div class="cfp-sub">${e.career ? LEVEL_ICONS[clamp(e.level, 1, 6) - 1] + ' ' + E(titleOf(e)) + ' · ур. ' + e.level : 'Без карьеры — откройте 💼'}</div>
-      ${e.career ? `<div class="cfp-sub">${fameIcon(e.fame)} ${fameTier(e.fame)} · ${e.fame}/1000</div>${bar(e.fame / 10, '#fbbf24')}` : ''}</div></div>`;
-    const cancel = e.cancel ? `<div class="cfp-card cfp-alert">${CANCEL[e.cancel.severity].icon} <b>${CANCEL[e.cancel.severity].label}</b>: ${E(e.cancel.reason)}<div class="cfp-sub">Осталось ~${e.cancel.left} сообщ.</div></div>` : '';
+      <b>${E(who)}</b><div class="cfp-sub">${e.career ? LEVEL_ICONS[clamp(e.level, 1, 6) - 1] + ' ' + E(titleOf(e)) + ' · ' + tr('ур.', 'lvl') + ' ' + e.level : tr('Без карьеры — откройте 💼', 'No career — open 💼')}</div>
+      ${e.career ? `<div class="cfp-sub">${fameIcon(e.fame)} ${fameTier(e.fame)} · ${e.fame}/1000</div>${bar(e.fame / 10, '#fbbf24')}` : ''}
+      ${plates.length ? `<div class="cfp-tags">${plates.map((p) => `<span>${p}</span>`).join('')}</div>` : ''}</div></div>`;
+    const cancel = e.cancel ? `<div class="cfp-card cfp-alert">${CANCEL[e.cancel.severity].icon} <b>${bi(CANCEL[e.cancel.severity].label)}</b>: ${E(e.cancel.reason)}<div class="cfp-sub">${tr('Осталось', 'Left')} ~${e.cancel.left} ${tr('сообщ.', 'msgs')}</div></div>` : '';
     const act = e.tasks.filter((t) => t.active && !t.done).length;
-    const badge = { content: e.live ? '🔴' : '', tasks: act ? act : '', aud: e.cancel ? '!' : '', feed: e.reaction ? '•' : '' };
-    const grid = APPS.map((a) => `<div class="cfp-app" data-act="open" data-v="${a.id}"><div class="cfp-ico" style="background:${a.bg}">${a.icon}${badge[a.id] ? `<span class="cfp-bdg">${badge[a.id]}</span>` : ''}</div><span>${a.name}</span></div>`).join('');
+    const badge = { content: e.live ? '🔴' : '', tasks: act ? act : '', aud: e.cancel ? '!' : '', feed: e.reaction ? '•' : '', threats: e.doxxLeft > 0 ? '!' : stalkerVisible(e) ? '👁' : '' };
+    const grid = APPS.map((a) => `<div class="cfp-app" data-act="open" data-v="${a.id}"><div class="cfp-ico" style="background:${a.bg}">${a.icon}${badge[a.id] ? `<span class="cfp-bdg">${badge[a.id]}</span>` : ''}</div><span>${bi(a.name)}</span></div>`).join('');
     return prof + cancel + `<div class="cfp-grid">${grid}</div>`;
   }
 
   function screenCareer(e, who) {
-    const picker = `<div class="cfp-card"><div class="cfp-h">Профессия</div><div class="cfp-picks">${Object.entries(CAREERS).map(([k, c]) =>
-      `<div class="cfp-pick ${e.career === k ? 'on' : ''}" data-act="career" data-v="${k}"><span>${c.icon}</span>${c.name}</div>`).join('')}</div></div>`;
-    if (!e.career) return picker + empty('Выберите профессию, чтобы начать карьеру');
+    const picker = `<div class="cfp-card"><div class="cfp-h">${tr('Профессия', 'Profession')}</div><div class="cfp-picks">${Object.entries(CAREERS).map(([k, c]) => {
+      const lv = lvlOf(e, k);
+      return `<div class="cfp-pick ${e.career === k ? 'on' : ''}" data-act="career" data-v="${k}"><span>${c.icon}</span>${careerName(k)}${lv ? `<small>${tr('ур.', 'lvl')} ${lv}</small>` : ''}</div>`;
+    }).join('')}</div><div class="cfp-sub" style="margin-top:6px">${tr('Смена профессии ничего не сбрасывает: прогресс других карьер, слава и аудитория сохраняются.', 'Switching careers resets nothing: other careers’ progress, fame and audience are kept.')}</div></div>`;
+    if (!e.career) return picker + empty(tr('Выберите профессию, чтобы начать карьеру', 'Pick a profession to start a career'));
     const c = careerOf(e); const need = xpNeeded(e.level);
     const xpPct = e.level >= maxLevel(e) ? 100 : Math.round((e.xp / need) * 100);
-    const ladder = c.ladder.map((r, i) => `<div class="cfp-step ${i + 1 === e.level ? 'now' : i + 1 < e.level ? 'past' : ''}">${LEVEL_ICONS[i]} <b>${i + 1}</b> ${E(r)}</div>`).join('');
+    const ladder = ladderOf(e.career).map((r, i) => `<div class="cfp-step ${i + 1 === e.level ? 'now' : i + 1 < e.level ? 'past' : ''}">${LEVEL_ICONS[i]} <b>${i + 1}</b> ${E(r)}</div>`).join('');
     return picker + `<div class="cfp-card"><div class="cfp-h">${c.icon} ${E(titleOf(e))}</div>
-      <div class="cfp-sub">Уровень ${e.level}/${maxLevel(e)} · опыт ${e.xp}/${e.level >= maxLevel(e) ? 'MAX' : need}</div>${bar(xpPct, '#34d399')}
-      <div class="cfp-sub" style="margin-top:6px">${fameIcon(e.fame)} Слава: ${e.fame}/1000 — ${fameTier(e.fame)}</div>${bar(e.fame / 10, '#fbbf24')}
-      <div style="margin-top:8px">${btn('xp', '🎁 ± XP / слава', '', '')}</div></div>
-      <div class="cfp-card"><div class="cfp-h">📊 Контент</div><div class="cfp-sub">🔴 Стримов: ${e.stats.stream} · 📸 Сторис: ${e.stats.stories} · 🎥 Видео: ${e.stats.video} · 🖼️ Постов: ${e.stats.post}</div></div>
-      <div class="cfp-card"><div class="cfp-h">Карьерная лестница</div>${ladder}</div>`;
+      <div class="cfp-sub">${tr('Уровень', 'Level')} ${e.level}/${maxLevel(e)} · ${tr('опыт', 'XP')} ${e.xp}/${e.level >= maxLevel(e) ? 'MAX' : need}</div>${bar(xpPct, '#34d399')}
+      <div class="cfp-sub" style="margin-top:6px">${fameIcon(e.fame)} ${tr('Слава', 'Fame')}: ${e.fame}/1000 — ${fameTier(e.fame)}</div>${bar(e.fame / 10, '#fbbf24')}
+      <div style="margin-top:8px">${btn('xp', tr('🎁 ± XP / слава', '🎁 ± XP / fame'))}</div></div>
+      <div class="cfp-card"><div class="cfp-h">📊 ${tr('Контент', 'Content')}</div><div class="cfp-sub">${statsLine(e)}</div></div>
+      <div class="cfp-card"><div class="cfp-h">${tr('Карьерная лестница', 'Career ladder')}</div>${ladder}</div>`;
   }
 
   function taskCard(t) {
     const st = t.done ? '✅' : t.active ? '▶️' : '📋';
     const rw = rewardOf(t);
     const pl = t.place && PLACES[t.place];
-    const tags = pl ? `<div class="cfp-tags"><span>${pl.icon} ${pl.name}</span>${t.format ? `<span>${FORMATS[t.format]}</span>` : ''}${pl.mult > 1 ? `<span>×${pl.mult} награда</span>` : ''}</div>` +
+    const tags = pl ? `<div class="cfp-tags"><span>${pl.icon} ${pName(t.place)}</span>${t.format ? `<span>${fLabel(t.format)}</span>` : ''}${pl.mult > 1 ? `<span>×${pl.mult} ${tr('награда', 'reward')}</span>` : ''}</div>` +
       (t.reqs && t.reqs.length ? `<div class="cfp-reqs">📋 ${t.reqs.map(E).join(' · ')}</div>` : '') : '';
     const steps = t.steps?.length ? `<div class="cfp-steps">${t.steps.map((x) => `<span class="${x.done ? 'sdone' : ''}">${x.done ? '☑' : '☐'} ${E(x.text)}</span>`).join('')}</div>` : '';
-    const prog = t.active && !t.done ? `<div class="cfp-sub">Прогресс: ${t.progress || 0}% (${t.steps.filter((x) => x.done).length}/${t.steps.length})</div>${bar(t.progress || 0, '#4facfe')}` : '';
+    const prog = t.active && !t.done ? `<div class="cfp-sub">${tr('Прогресс', 'Progress')}: ${t.progress || 0}% (${t.steps.filter((x) => x.done).length}/${t.steps.length})</div>${bar(t.progress || 0, '#4facfe')}` : '';
     const b = [];
     if (!t.done) {
-      b.push(t.active ? btn('drop', '⏸ Отказаться', t.id) : btn('take', '▶️ Взять', t.id, 'pri'));
-      if (t.src !== 'manual') b.push(btn('done', '✔ Зачесть', t.id));
+      b.push(t.active ? btn('drop', tr('⏸ Отказаться', '⏸ Drop'), t.id) : btn('take', tr('▶️ Взять', '▶️ Take'), t.id, 'pri'));
+      if (t.src !== 'manual') b.push(btn('done', tr('✔ Зачесть', '✔ Complete'), t.id));
     }
     b.push(btn('del', '🗑', t.id, 'ghost'));
     return `<div class="cfp-card cfp-task ${t.active && !t.done ? 'active' : ''} ${t.done ? 'done' : ''}">
@@ -627,102 +748,134 @@
       ${t.desc ? `<div class="cfp-sub">${E(t.desc)}</div>` : ''}${tags}${steps}${prog}<div class="cfp-tb">${b.join('')}</div></div>`;
   }
   function screenTasks(e, who) {
-    if (!e.career) return needCareer(e);
-    const avail = e.tasks.filter((t) => !t.done && !t.active), work = e.tasks.filter((t) => t.active && !t.done), done = e.tasks.filter((t) => t.done);
+    if (!e.career) return needCareer();
+    const mine = (t) => !t.career || t.career === e.career;
+    const avail = e.tasks.filter((t) => !t.done && !t.active && mine(t)), work = e.tasks.filter((t) => t.active && !t.done), done = e.tasks.filter((t) => t.done);
     const list = { avail, work, done }[ui.tab] || avail;
-    const seg = `<div class="cfp-seg">${[['avail', '📋 Доступные', avail.length], ['work', '▶️ В работе', work.length], ['done', '✅ Готово', done.length]]
+    const seg = `<div class="cfp-seg">${[['avail', tr('📋 Доступные', '📋 Available'), avail.length], ['work', tr('▶️ В работе', '▶️ Active'), work.length], ['done', tr('✅ Готово', '✅ Done'), done.length]]
       .map(([k, l, n]) => `<div class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-v="${k}">${l} ${n}</div>`).join('')}</div>`;
-    const chips = (items, cur, act) => `<div class="cfp-chips">${items.map(([k, l]) => `<span class="cfp-chip ${cur === k ? 'on' : ''}" data-act="${act}" data-v="${k}">${l}</span>`).join('')}</div>`;
-    const picker = hasPlaces(e) ? `<div class="cfp-card"><div class="cfp-h">Параметры задания</div>
-      <div class="cfp-sub">Место</div>${chips([['rand', '🎲 Любое'], ...Object.entries(PLACES).map(([k, p]) => [k, `${p.icon} ${p.name}`])], ui.pickPlace, 'pickplace')}
-      <div class="cfp-sub">Формат</div>${chips([['rand', '🎲 Любой'], ...Object.entries(FORMATS)], ui.pickFormat, 'pickformat')}
-      <div class="cfp-sub" style="margin-top:4px">Требования зависят от места и формата. Награда: дома ×1, на улице ×1.2, на мероприятии ×1.4.</div></div>` : '';
-    const placeSel = hasPlaces(e) ? `<div class="cfp-row"><select class="cfp-in" id="cff_place">${Object.entries(PLACES).map(([k, p]) => `<option value="${k}" ${ui.pickPlace === k ? 'selected' : ''}>${p.icon} ${p.name}</option>`).join('')}</select>
-      <select class="cfp-in" id="cff_format">${Object.entries(FORMATS).map(([k, l]) => `<option value="${k}" ${ui.pickFormat === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : '';
-    const top = `<div class="cfp-row">${btn('newtask', ui.busy ? '⏳ Генерация…' : '🎯 Задание от ИИ', '', 'pri')}${btn('addform', ui.form ? '✖ Закрыть' : '✍️ Вручную')}</div>`;
-    const form = ui.form ? `<div class="cfp-card"><div class="cfp-h">Новое задание</div>
-      <input class="cfp-in" id="cff_title" placeholder="Название"><input class="cfp-in" id="cff_desc" placeholder="Что нужно сделать">${placeSel}
-      <div class="cfp-row"><input class="cfp-in" id="cff_xp" type="number" value="25" placeholder="XP"><input class="cfp-in" id="cff_fame" type="number" value="10" placeholder="Слава"></div>
-      ${btn('submitform', '＋ Добавить', '', 'pri')}</div>` : '';
-    const hint = ui.tab === 'work' && work.length ? `<div class="cfp-sub" style="margin-bottom:6px">Выполняйте задания в ролевой: награда придёт за действия, показанные в постах.</div>` : '';
-    return picker + top + form + seg + hint + (list.length ? list.map(taskCard).join('') : empty({ avail: 'Нет доступных заданий', work: 'Нет заданий в работе — возьмите одно из «Доступных»', done: 'Пока ничего не выполнено' }[ui.tab]));
+    const picker = hasPlaces(e) ? `<div class="cfp-card"><div class="cfp-h">${tr('Параметры задания', 'Task options')}</div>
+      <div class="cfp-sub">${tr('Место', 'Place')}</div>${chipsHtml([['rand', tr('🎲 Любое', '🎲 Any')], ...Object.keys(PLACES).map((k) => [k, `${PLACES[k].icon} ${pName(k)}`])], ui.pickPlace, 'pickplace')}
+      <div class="cfp-sub">${tr('Формат', 'Format')}</div>${chipsHtml([['rand', tr('🎲 Любой', '🎲 Any')], ...Object.keys(FORMATS).map((k) => [k, fLabel(k)])], ui.pickFormat, 'pickformat')}
+      <div class="cfp-sub" style="margin-top:4px">${tr('Требования зависят от места и формата. Награда: дома ×1, на улице ×1.2, на мероприятии ×1.4.', 'Requirements depend on place and format. Reward: home ×1, outdoors ×1.2, event ×1.4.')}</div></div>` : '';
+    const placeSel = hasPlaces(e) ? `<div class="cfp-row"><select class="cfp-in" id="cff_place">${Object.keys(PLACES).map((k) => `<option value="${k}" ${ui.pickPlace === k ? 'selected' : ''}>${PLACES[k].icon} ${pName(k)}</option>`).join('')}</select>
+      <select class="cfp-in" id="cff_format">${Object.keys(FORMATS).map((k) => `<option value="${k}" ${ui.pickFormat === k ? 'selected' : ''}>${fLabel(k)}</option>`).join('')}</select></div>` : '';
+    const top = `<div class="cfp-row">${btn('newtask', ui.busy ? tr('⏳ Генерация…', '⏳ Generating…') : tr('🎯 Задание от ИИ', '🎯 AI task'), '', 'pri')}${btn('addform', ui.form ? tr('✖ Закрыть', '✖ Close') : tr('✍️ Вручную', '✍️ Manual'))}</div>`;
+    const form = ui.form ? `<div class="cfp-card"><div class="cfp-h">${tr('Новое задание', 'New task')}</div>
+      <input class="cfp-in" id="cff_title" placeholder="${tr('Название', 'Title')}"><input class="cfp-in" id="cff_desc" placeholder="${tr('Что нужно сделать', 'What needs to be done')}">${placeSel}
+      <div class="cfp-row"><input class="cfp-in" id="cff_xp" type="number" value="25" placeholder="XP"><input class="cfp-in" id="cff_fame" type="number" value="10" placeholder="${tr('Слава', 'Fame')}"></div>
+      ${btn('submitform', tr('＋ Добавить', '＋ Add'), '', 'pri')}</div>` : '';
+    const hint = ui.tab === 'work' && work.length ? `<div class="cfp-sub" style="margin-bottom:6px">${tr('Выполняйте задания в ролевой: награда придёт за действия, показанные в постах.', 'Play the tasks out in the roleplay: the reward comes for actions shown in the posts.')}</div>` : '';
+    const emptyTxt = { avail: tr('Нет доступных заданий', 'No available tasks'), work: tr('Нет заданий в работе — возьмите одно из «Доступных»', 'No active tasks — take one from “Available”'), done: tr('Пока ничего не выполнено', 'Nothing completed yet') }[ui.tab];
+    return picker + top + form + seg + hint + (list.length ? list.map(taskCard).join('') : empty(emptyTxt));
   }
 
   function screenContent(e, who) {
-    if (!e.career) return needCareer(e);
-    const stats = `<div class="cfp-card"><div class="cfp-h">📊 Ваш контент</div><div class="cfp-sub">🔴 Стримов: ${e.stats.stream} · 📸 Сторис: ${e.stats.stories} · 🎥 Видео: ${e.stats.video} · 🖼️ Постов: ${e.stats.post}</div></div>`;
+    if (!e.career) return needCareer();
+    const stats = `<div class="cfp-card"><div class="cfp-h">📊 ${tr('Ваш контент', 'Your content')}</div><div class="cfp-sub">${statsLine(e)}</div></div>`;
     if (e.live) {
       const l = e.live;
-      return `<div class="cfp-card cfp-alert"><div class="cfp-h">🔴 В ЭФИРЕ</div><div class="cfp-sub">${PLACES[l.place].icon} ${PLACES[l.place].name} · ~${l.viewers} зрителей · сообщений в эфире: ${l.ticks}</div>
+      return `<div class="cfp-card cfp-alert"><div class="cfp-h">${tr('🔴 В ЭФИРЕ', '🔴 LIVE')}</div><div class="cfp-sub">${PLACES[l.place].icon} ${pName(l.place)} · ~${l.viewers} ${tr('зрителей', 'viewers')} · ${tr('сообщений в эфире', 'messages on air')}: ${l.ticks}</div>
         <div class="cfp-reqs">📋 ${reqsFor(l.place, 'stream').map(E).join(' · ')}</div>
-        <div style="margin-top:8px">${btn('contentstop', '⏹ Завершить стрим', '', 'danger')}</div></div>
-        <div class="cfp-sub">Чем дольше и удачнее стрим, тем больше награда после завершения.</div>${stats}`;
+        <div style="margin-top:8px">${btn('contentstop', tr('⏹ Завершить стрим', '⏹ End the stream'), '', 'danger')}</div></div>
+        <div class="cfp-sub">${tr('Чем дольше и удачнее стрим, тем больше награда после завершения.', 'The longer and better the stream, the bigger the reward after it ends.')}</div>${stats}`;
     }
-    const chips = (items, cur, act) => `<div class="cfp-chips">${items.map(([k, l]) => `<span class="cfp-chip ${cur === k ? 'on' : ''}" data-act="${act}" data-v="${k}">${l}</span>`).join('')}</div>`;
-    const go = ui.cFormat === 'stream' ? btn('contentgo', '▶️ Начать стрим', '', 'pri') : btn('contentgo', '📤 Опубликовать', '', 'pri');
-    return `<div class="cfp-card"><div class="cfp-h">Выйти в эфир или опубликовать</div>
-      <div class="cfp-sub">Место</div>${chips(Object.entries(PLACES).map(([k, p]) => [k, `${p.icon} ${p.name}`]), ui.cPlace, 'cplace')}
-      <div class="cfp-sub">Формат</div>${chips(Object.entries(FORMATS), ui.cFormat, 'cformat')}
+    const go = ui.cFormat === 'stream' ? btn('contentgo', tr('▶️ Начать стрим', '▶️ Go live'), '', 'pri') : btn('contentgo', tr('📤 Опубликовать', '📤 Publish'), '', 'pri');
+    return `<div class="cfp-card"><div class="cfp-h">${tr('Выйти в эфир или опубликовать', 'Go live or publish')}</div>
+      <div class="cfp-sub">${tr('Место', 'Place')}</div>${chipsHtml(Object.keys(PLACES).map((k) => [k, `${PLACES[k].icon} ${pName(k)}`]), ui.cPlace, 'cplace')}
+      <div class="cfp-sub">${tr('Формат', 'Format')}</div>${chipsHtml(Object.keys(FORMATS).map((k) => [k, fLabel(k)]), ui.cFormat, 'cformat')}
       <div class="cfp-reqs">📋 ${reqsFor(ui.cPlace, ui.cFormat).map(E).join(' · ')}</div>
       <div style="margin-top:8px">${go}</div></div>
-      <div class="cfp-sub" style="margin-bottom:8px">Можно и не нажимать: если вы или персонаж сами включите стрим или снимете сторис в сюжете, расширение заметит это и начислит награду.</div>${stats}`;
+      <div class="cfp-sub" style="margin-bottom:8px">${tr('Можно и не нажимать: если вы или персонаж сами включите стрим или снимете сторис в сюжете, расширение заметит это и начислит награду.', 'You do not have to press anything: if you or the character start a stream or film stories in the story, the extension notices it and gives the reward.')}</div>${stats}`;
   }
 
   function screenFeed(e, who) {
-    const react = e.reaction ? `<div class="cfp-card cfp-react">📣 <b>Реакция аудитории</b><div class="cfp-sub">${E(e.reaction.text)}</div></div>` : '';
-    const log = e.log.length ? e.log.map((l) => `<div class="cfp-note">${E(l)}</div>`).join('') : empty('Событий пока нет');
+    const react = e.reaction ? `<div class="cfp-card cfp-react">📣 <b>${tr('Реакция аудитории', 'Audience reaction')}</b><div class="cfp-sub">${E(e.reaction.text)}</div></div>` : '';
+    const log = e.log.length ? e.log.map((l) => `<div class="cfp-note">${E(l)}</div>`).join('') : empty(tr('Событий пока нет', 'No events yet'));
     return react + log;
   }
 
   function screenAud(e, who) {
-    if (!e.career) return needCareer(e);
-    const meters = Object.entries(SEG).map(([k, [ic, lb]]) => `<div class="cfp-sub">${ic} ${lb}: ${e.audience[k]} — ${mood(e.audience[k])}</div>${bar(e.audience[k], '#a78bfa')}`).join('<div style="height:6px"></div>');
+    if (!e.career) return needCareer();
+    const meters = Object.entries(SEG).map(([k, [ic, lb]]) => `<div class="cfp-sub">${ic} ${bi(lb)}: ${e.audience[k]} — ${mood(e.audience[k])}</div>${bar(e.audience[k], '#a78bfa')}`).join('<div style="height:6px"></div>');
     const cancel = e.cancel
-      ? `<div class="cfp-card cfp-alert">${CANCEL[e.cancel.severity].icon} <b>${CANCEL[e.cancel.severity].label}</b>: ${E(e.cancel.reason)}<div class="cfp-sub">Осталось ~${e.cancel.left} сообщ.</div><div style="margin-top:6px">${btn('lift', 'Снять отмену')}</div></div>`
-      : `<div class="cfp-card"><div class="cfp-sub">Статус: ✅ в порядке</div><div style="margin-top:6px">${btn('cancelbtn', '🚫 Отменить вручную', '', 'danger')}</div></div>`;
-    return `<div class="cfp-card"><div class="cfp-h">Настроение аудитории</div>${meters}</div>
-      <div class="cfp-card"><div class="cfp-sub">🔥 Риск разоблачения: ${e.heat}%</div>${bar(e.heat, '#ef4565')}</div>
+      ? `<div class="cfp-card cfp-alert">${CANCEL[e.cancel.severity].icon} <b>${bi(CANCEL[e.cancel.severity].label)}</b>: ${E(e.cancel.reason)}<div class="cfp-sub">${tr('Осталось', 'Left')} ~${e.cancel.left} ${tr('сообщ.', 'msgs')}</div><div style="margin-top:6px">${btn('lift', tr('Снять отмену', 'Lift cancellation'))}</div></div>`
+      : `<div class="cfp-card"><div class="cfp-sub">${tr('Статус: ✅ в порядке', 'Status: ✅ fine')}</div><div style="margin-top:6px">${btn('cancelbtn', tr('🚫 Отменить вручную', '🚫 Cancel manually'), '', 'danger')}</div></div>`;
+    return `<div class="cfp-card"><div class="cfp-h">${tr('Настроение аудитории', 'Audience mood')}</div>${meters}</div>
+      <div class="cfp-card"><div class="cfp-sub">${tr('🔥 Риск разоблачения', '🔥 Exposure risk')}: ${e.heat}%</div>${bar(e.heat, '#ef4565')}</div>
       ${e.reaction ? `<div class="cfp-card cfp-react">📣 ${E(e.reaction.text)}</div>` : ''}${cancel}`;
   }
 
+  function screenThreats(e, who) {
+    const s = S();
+    if (!e.career) return needCareer();
+    const hat = s.haters
+      ? `<div class="cfp-card"><div class="cfp-h">😡 ${tr('Хейтеры', 'Haters')}</div><div class="cfp-sub">${tr('Уровень травли', 'Harassment level')}: ${e.haters}/100</div>${bar(e.haters, '#ef4565')}
+         ${s.doxx ? `<div class="cfp-sub" style="margin-top:6px">🕵️ ${tr('Вероятность доксинга', 'Doxxing probability')}: <b>${doxxChance(e)}%</b></div>${bar(doxxChance(e), '#f97316')}
+         <div class="cfp-sub" style="margin-top:6px">🔒 ${tr('Приватность', 'Privacy')}: ${e.privacy}/100</div>${bar(e.privacy, '#38bdf8')}` : `<div class="cfp-sub">${tr('Доксинг отключён в настройках', 'Doxxing is disabled in settings')}</div>`}
+         <div class="cfp-sub" style="margin-top:6px">${tr('Растёт от скандалов, отмен и спорных ходов; приватность повышают задания по защите.', 'Grows with scandals, cancellations and controversial moves; privacy goes up with protection tasks.')}</div></div>`
+      : `<div class="cfp-card"><div class="cfp-sub">${tr('Хейтеры отключены в настройках', 'Haters are disabled in settings')}</div></div>`;
+    const crisis = s.doxx && e.doxxLeft > 0 ? `<div class="cfp-card cfp-alert">🕵️ <b>${tr('Утечка личных данных', 'Personal data leak')}</b><div class="cfp-sub">${tr('Возьмите задание по защите во вкладке «Задания».', 'Take the protection task in the “Tasks” tab.')}</div></div>` : '';
+    let stalk;
+    if (!s.stalkers) stalk = `<div class="cfp-card"><div class="cfp-sub">${tr('Сталкеры отключены в настройках', 'Stalkers are disabled in settings')}</div></div>`;
+    else if (!s.stalkerPlate) stalk = `<div class="cfp-card"><div class="cfp-sub">${tr('Плашка сталкера выключена в настройках — он не показывается и не попадает в сюжет.', 'The stalker plate is off in settings — it is hidden and kept out of the story.')}</div></div>`;
+    else if (!e.stalker) stalk = `<div class="cfp-card"><div class="cfp-h">👁️ ${tr('Сталкер', 'Stalker')}</div><div class="cfp-sub">${tr('Пока не замечен', 'None noticed so far')}</div></div>`;
+    else if (e.stalkerHidden) stalk = `<div class="cfp-card"><div class="cfp-h">👁️ ${tr('Сталкер', 'Stalker')}</div><div class="cfp-sub">${tr('Плашка скрыта — сюжет его не упоминает.', 'Plate hidden — the story does not mention it.')}</div><div style="margin-top:6px">${btn('stalkshow', tr('👁️ Показать плашку', '👁️ Show plate'))}</div></div>`;
+    else stalk = `<div class="cfp-card"><div class="cfp-h">👁️ ${tr('Сталкер', 'Stalker')}</div><div class="cfp-sub">${tr('Навязчивость', 'Obsession')}: ${Math.round(e.stalker.level)}/100</div>${bar(e.stalker.level, '#a855f7')}
+      <div class="cfp-tb">${btn('stalkhide', tr('🙈 Скрыть плашку', '🙈 Hide plate'))}${btn('stalkresolve', tr('🛡️ Проблема решена', '🛡️ Resolved'), '', 'pri')}</div></div>`;
+    const tags = e.tags.cuck
+      ? `<div class="cfp-card"><div class="cfp-h">🏷️ ${tr('Ярлыки', 'Labels')}</div><div class="cfp-tags"><span>🏷️ ${tr('Куколд', 'Cuck')}${e.tags.cuck.from !== who ? ` (${E(e.tags.cuck.from)})` : ''}</span></div><div style="margin-top:6px">${btn('tagoff', tr('Убрать ярлык', 'Remove label'))}</div></div>`
+      : `<div class="cfp-card"><div class="cfp-h">🏷️ ${tr('Ярлыки', 'Labels')}</div><div class="cfp-sub">${tr('Нет. Ярлык «куколд» ставится автоматически при уходе на платформу 18+.', 'None. The “cuck” label is applied automatically when going to an 18+ platform.')}</div><div style="margin-top:6px">${btn('tagon', tr('＋ Добавить вручную', '＋ Add manually'))}</div></div>`;
+    return hat + crisis + stalk + tags + `<div>${btn('editthreat', tr('🛠 Изменить значения', '🛠 Edit values'))}</div>`;
+  }
+
   function screenMoves(e, who) {
-    if (!e.career) return needCareer(e);
-    const sg = (n) => (n >= 0 ? '+' : '') + n;
+    if (!e.career) return needCareer();
+    const s = S(); const sg = (n) => (n >= 0 ? '+' : '') + n;
     const cards = MOVE_KEYS.map((k) => {
-      const m = MOVES[k], f = effOf(e, k);
-      return `<div class="cfp-card"><div class="cfp-th"><b>${m.icon} ${E(m.name)}</b></div>
+      const m = MOVES[k], f = effOf(e, k), ov = s.cancelChance[k];
+      return `<div class="cfp-card"><div class="cfp-th"><b>${m.icon} ${E(bi(m.name))}</b></div>
         <div class="cfp-sub">⭐${sg(f.fame)} · 👥${sg(f.loyal)} · 💼${sg(f.brands)} · 📰${sg(f.public)} · 🔥+${f.heat}</div>
-        <div class="cfp-sub">Шанс отмены ≈ ${Math.round(f.p * 100)}%</div><div style="margin-top:6px">${btn('move', 'Совершить', '', '', k)}</div></div>`;
+        <div class="cfp-row" style="margin-top:6px"><span class="cfp-sub">${tr('Шанс отмены', 'Cancel chance')}, %:</span>
+          <input class="cfp-in cfp-num" type="number" min="0" max="100" data-chance="${k}" placeholder="${tr('авто', 'auto')} ${Math.round(f.p * 100)}" value="${typeof ov === 'number' ? ov : ''}">
+          ${btn('move', tr('Совершить', 'Do it'), '', '', k)}</div></div>`;
     }).join('');
-    const recent = e.moves.length ? `<div class="cfp-card"><div class="cfp-h">Недавние ходы</div>${e.moves.slice(0, 4).map((x) => `<div class="cfp-sub">${MOVES[x.type]?.icon} ${E(MOVES[x.type]?.name || x.type)}${x.note ? ` — ${E(x.note)}` : ''}</div>`).join('')}</div>` : '';
-    return `<div class="cfp-sub" style="margin-bottom:6px">Оценки показывают ориентир для вашей профессии; итог зависит от случайности и известности.</div>` + cards + recent;
+    const recent = e.moves.length ? `<div class="cfp-card"><div class="cfp-h">${tr('Недавние ходы', 'Recent moves')}</div>${e.moves.slice(0, 4).map((x) => `<div class="cfp-sub">${MOVES[x.type]?.icon} ${E(bi(MOVES[x.type]?.name || x.type))}${x.note ? ` — ${E(x.note)}` : ''}</div>`).join('')}</div>` : '';
+    return `<div class="cfp-sub" style="margin-bottom:6px">${tr('Оценки — ориентир для вашей профессии. Поле «Шанс отмены» можно править: пусто = автоматически, число = ваш шанс (0 — никогда, 100 — всегда).', 'Estimates are a guide for your profession. The “Cancel chance” field is editable: empty = automatic, a number = your chance (0 = never, 100 = always).')}</div>` + cards +
+      `<div class="cfp-card"><div class="cfp-sub">${tr('Множитель риска разоблачения (скрытая реклама, скам), %', 'Exposure risk multiplier (shady ads, scams), %')}</div><input class="cfp-in cfp-num" type="number" min="0" max="300" data-set="exposeScale" value="${s.exposeScale}"></div>` + recent;
   }
 
   function screenSettings() {
     const s = S();
     const chk = (k, label) => `<label class="cfp-chk"><input type="checkbox" data-set="${k}" ${s[k] ? 'checked' : ''}><span>${label}</span></label>`;
+    const sel = (k, opts) => `<select class="cfp-in" data-set="${k}">${opts.map(([v, l]) => `<option value="${v}" ${s[k] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
     const profiles = ctx().extensionSettings?.connectionManager?.profiles || [];
-    return `<div class="cfp-card"><div class="cfp-h">Общее</div>
-        ${chk('enabled', 'Расширение включено')}${chk('showFab', 'Плавающая кнопка 📱')}${chk('inject', 'Передавать состояние в промпт')}
-        ${chk('demandActions', 'Награда только за действия в постах')}${chk('auto', 'Авто-анализ после каждого ответа')}
-        <div class="cfp-sub" style="margin-top:8px">🔆 Непрозрачность телефона: <b id="cfp_opv">${Math.round(s.opacity * 100)}%</b></div>
+    return `<div class="cfp-card"><div class="cfp-h">${tr('Общее', 'General')}</div>
+        <div class="cfp-sub">🌐 ${tr('Язык', 'Language')}</div>${sel('lang', [['ru', 'Русский'], ['en', 'English']])}
+        ${chk('enabled', tr('Расширение включено', 'Extension enabled'))}${chk('showFab', tr('Плавающая кнопка 📱', 'Floating button 📱'))}${chk('inject', tr('Передавать состояние в промпт', 'Send state to the prompt'))}
+        ${chk('demandActions', tr('Награда только за действия в постах', 'Reward only for actions shown in posts'))}${chk('auto', tr('Авто-анализ после каждого ответа', 'Auto-analysis after every reply'))}
+        <div class="cfp-sub" style="margin-top:8px">🔆 ${tr('Непрозрачность телефона', 'Phone opacity')}: <b id="cfp_opv">${Math.round(s.opacity * 100)}%</b></div>
         <input type="range" min="30" max="100" step="5" value="${Math.round(s.opacity * 100)}" data-set="opacity" class="cfp-range"></div>
-      <div class="cfp-card"><div class="cfp-h">Модель для анализа и заданий</div>
+      <div class="cfp-card"><div class="cfp-h">🛡️ ${tr('Угрозы и ярлыки', 'Threats & labels')}</div>
+        ${chk('haters', tr('Хейтеры', 'Haters'))}${chk('doxx', tr('Доксинг (вероятность и последствия)', 'Doxxing (probability and consequences)'))}
+        ${chk('stalkers', tr('Сталкеры', 'Stalkers'))}${chk('stalkerPlate', tr('Показывать плашку сталкера и упоминать его в сюжете', 'Show the stalker plate and mention it in the story'))}
+        <div class="cfp-sub">${tr('Как часто появляются сталкеры', 'How often stalkers appear')}</div>${sel('stalkerFreq', [['rare', tr('Редко', 'Rarely')], ['normal', tr('Обычно', 'Normal')], ['often', tr('Часто', 'Often')]])}
+        ${chk('cuckTag', tr('Ярлык «куколд» при уходе на платформу 18+', '“Cuck” label when going to an 18+ platform'))}
+        <div class="cfp-sub">${tr('Кому ставить ярлык', 'Who gets the label')}</div>${sel('cuckTarget', [['self', tr('Тому, кто ушёл', 'The one who went')], ['partner', tr('Партнёру (второму участнику)', 'The partner (the other participant)')]])}</div>
+      <div class="cfp-card"><div class="cfp-h">${tr('Модель для анализа и заданий', 'Model for analysis and tasks')}</div>
         <select class="cfp-in" data-set="mode">
-          <option value="current" ${s.mode === 'current' ? 'selected' : ''}>Текущее подключение (без настройки)</option>
-          <option value="profile" ${s.mode === 'profile' ? 'selected' : ''}>Connection Profile (ключ в профиле)</option>
-          <option value="endpoint" ${s.mode === 'endpoint' ? 'selected' : ''}>Свой endpoint / роутер (ключ необязателен)</option>
+          <option value="current" ${s.mode === 'current' ? 'selected' : ''}>${tr('Текущее подключение (без настройки)', 'Current connection (no setup)')}</option>
+          <option value="profile" ${s.mode === 'profile' ? 'selected' : ''}>${tr('Connection Profile (ключ в профиле)', 'Connection Profile (key is in the profile)')}</option>
+          <option value="endpoint" ${s.mode === 'endpoint' ? 'selected' : ''}>${tr('Свой endpoint / роутер (ключ необязателен)', 'Custom endpoint / router (key optional)')}</option>
         </select>
-        ${s.mode === 'profile' ? `<select class="cfp-in" data-set="profileId"><option value="">— выбрать профиль —</option>${profiles.map((p) => `<option value="${E(p.id)}" ${p.id === s.profileId ? 'selected' : ''}>${E(p.name)}</option>`).join('')}</select>` : ''}
-        ${s.mode === 'endpoint' ? `<input class="cfp-in" data-set="endpointUrl" placeholder="URL, напр. http://localhost:4000/v1" value="${E(s.endpointUrl)}">
-          <input class="cfp-in" type="password" data-set="endpointKey" placeholder="API-ключ (необязательно)" value="${E(s.endpointKey)}">
-          <input class="cfp-in" data-set="endpointModel" list="cfp_models" placeholder="ID модели" value="${E(s.endpointModel)}">
+        ${s.mode === 'profile' ? `<select class="cfp-in" data-set="profileId"><option value="">${tr('— выбрать профиль —', '— choose a profile —')}</option>${profiles.map((p) => `<option value="${E(p.id)}" ${p.id === s.profileId ? 'selected' : ''}>${E(p.name)}</option>`).join('')}</select>` : ''}
+        ${s.mode === 'endpoint' ? `<input class="cfp-in" data-set="endpointUrl" placeholder="URL, e.g. http://localhost:4000/v1" value="${E(s.endpointUrl)}">
+          <input class="cfp-in" type="password" data-set="endpointKey" placeholder="${tr('API-ключ (необязательно)', 'API key (optional)')}" value="${E(s.endpointKey)}">
+          <input class="cfp-in" data-set="endpointModel" list="cfp_models" placeholder="${tr('ID модели', 'Model ID')}" value="${E(s.endpointModel)}">
           <datalist id="cfp_models">${ui.models.map((m) => `<option value="${E(m)}"></option>`).join('')}</datalist>
-          ${btn('loadmodels', '⟳ Загрузить список моделей')}` : ''}</div>
-      <div class="cfp-card"><div class="cfp-row">${btn('analyze', ui.busy ? '⏳ Анализ…' : '🔍 Проанализировать сейчас', '', 'pri')}${btn('reset', '🗑 Сбросить чат', '', 'danger')}</div></div>`;
+          ${btn('loadmodels', tr('⟳ Загрузить список моделей', '⟳ Load the model list'))}` : ''}</div>
+      <div class="cfp-card"><div class="cfp-row">${btn('analyze', ui.busy ? tr('⏳ Анализ…', '⏳ Analyzing…') : tr('🔍 Проанализировать сейчас', '🔍 Analyze now'), '', 'pri')}${btn('reset', tr('🗑 Сбросить чат', '🗑 Reset chat'), '', 'danger')}</div></div>`;
   }
-
-  const TITLES = { content: '📡 Контент', home: 'Career & Fame', career: '💼 Карьера', tasks: '🎯 Задания', feed: '📰 События', aud: '👥 Аудитория', moves: '🎭 Спорные ходы', settings: '⚙️ Настройки' };
 
   function renderPhone() {
     const root = document.getElementById('cf_phone');
@@ -731,15 +884,18 @@
     const prevScroll = prevBody && prevBody.dataset?.screen === ui.screen ? prevBody.scrollTop : 0;
     const who = curWho(); const e = who ? ent(who) : null;
     let body;
-    if (!S().enabled) body = empty('Расширение выключено', `<div>${btn('open', '⚙️ Настройки', '', '', 'settings')}</div>`);
+    if (!S().enabled) body = empty(tr('Расширение выключено', 'Extension is off'), `<div>${btn('open', tr('⚙️ Настройки', '⚙️ Settings'), '', '', 'settings')}</div>`);
     else if (ui.screen === 'settings') body = screenSettings();
-    else if (!e) body = empty('Откройте чат с персонажем');
-    else body = ({ home: screenHome, content: screenContent, career: screenCareer, tasks: screenTasks, feed: screenFeed, aud: screenAud, moves: screenMoves }[ui.screen] || screenHome)(e, who);
+    else if (!e) body = empty(tr('Откройте чат с персонажем', 'Open a chat with a character'));
+    else body = ({ home: screenHome, content: screenContent, career: screenCareer, tasks: screenTasks, feed: screenFeed, aud: screenAud, threats: screenThreats, moves: screenMoves }[ui.screen] || screenHome)(e, who);
     const whoBar = e && ui.screen !== 'settings' && S().enabled
       ? `<div class="cfp-who">${names().map((n) => `<div class="cfp-pill ${n === who ? 'on' : ''}" data-act="who" data-v="${E(n)}">${iconOf(ent(n))} ${E(n)}</div>`).join('')}</div>` : '';
+    const pct = Math.round(S().opacity * 100);
     root.innerHTML = `<div class="cfp-notch"></div>
-      <div class="cfp-status"><span class="cfp-time">${clock()}</span><span>📶 🔋</span></div>
-      <div class="cfp-title">${ui.screen !== 'home' ? '<span class="cfp-back" data-act="home">‹</span>' : '<span class="cfp-back"></span>'}<b>${TITLES[ui.screen] || ''}</b><span class="cfp-x" data-act="close">✕</span></div>
+      <div class="cfp-status"><span class="cfp-time">${clock()}</span>
+        <span class="cfp-opw" title="${tr('Непрозрачность', 'Opacity')}">🔆<input class="cfp-op" type="range" min="30" max="100" step="5" value="${pct}" data-set="opacity"><small id="cfp_opb">${pct}%</small></span>
+        <span class="cfp-lang" data-act="lang" title="Language / Язык">🌐 ${LANG().toUpperCase()}</span></div>
+      <div class="cfp-title">${ui.screen !== 'home' ? '<span class="cfp-back" data-act="home">‹</span>' : '<span class="cfp-back"></span>'}<b>${bi(TITLES[ui.screen] || '')}</b><span class="cfp-x" data-act="close">✕</span></div>
       ${whoBar}<div class="cfp-body" data-screen="${ui.screen}">${body}</div><div class="cfp-homebar" data-act="home"><i></i></div>`;
     const nb = root.querySelector ? root.querySelector('.cfp-body') : null;
     if (nb && prevScroll) nb.scrollTop = prevScroll;
@@ -786,6 +942,10 @@
     try { await fn(); } catch (err) { console.error('[Career&Fame]', err); toastr.error(String(err.message || err), 'Career & Fame'); }
     finally { ui.busy = false; commit(); }
   }
+  function setLang(l) {
+    S().lang = l === 'en' ? 'en' : 'ru'; saveSettings();
+    renderPhone(); updatePrompt(); buildDrawer();
+  }
 
   async function onClick(ev) {
     const el = ev.target.closest('[data-act]');
@@ -793,17 +953,14 @@
     const act = el.getAttribute('data-act'), v = el.getAttribute('data-v'), id = el.getAttribute('data-id');
     if (act === 'close') return setOpen(false);
     if (act === 'home') { ui.screen = 'home'; ui.form = false; return renderPhone(); }
+    if (act === 'lang') return setLang(LANG() === 'ru' ? 'en' : 'ru');
     if (ui.busy) return;
     const who = curWho(); const e = who ? ent(who) : null;
     switch (act) {
       case 'open': ui.screen = v; ui.form = false; renderPhone(); break;
       case 'who': ui.who = v; renderPhone(); break;
       case 'tab': ui.tab = v; renderPhone(); break;
-      case 'career':
-        if (!e) break;
-        if (e.career && e.career !== v && !confirm('Сменить профессию? Уровень и опыт сбросятся.')) break;
-        if (e.career !== v) { e.career = v; e.level = 1; e.xp = 0; addLog(e, `${CAREERS[v].icon} Новая профессия: ${CAREERS[v].name}`); }
-        commit(); break;
+      case 'career': if (e) { switchCareer(who, e, v); commit(); } break;
       case 'take': if (e && acceptTask(who, e, id)) ui.tab = 'work'; commit(); break;
       case 'drop': if (e) dropTask(who, e, id); commit(); break;
       case 'done': if (e) completeTask(who, e, id); commit(); break;
@@ -819,55 +976,81 @@
       case 'submitform': {
         const q = (i) => document.getElementById(i)?.value ?? '';
         const title = q('cff_title').trim();
-        if (!title) { toastr.warning('Введите название задания', 'Career & Fame'); break; }
-        const nt = { id: uid(), type: 'task', src: 'manual', title, desc: q('cff_desc').trim(), steps: [],
+        if (!title) { toastr.warning(tr('Введите название задания', 'Enter a task title'), 'Career & Fame'); break; }
+        const nt = { id: uid(), type: 'task', src: 'manual', career: e.career, title, desc: q('cff_desc').trim(), steps: [],
           xp: clamp(parseInt(q('cff_xp')) || 25, 0, 200), fame: clamp(parseInt(q('cff_fame')) || 0, 0, 200), done: false, active: false, progress: 0 };
         if (hasPlaces(e)) { nt.place = PLACES[q('cff_place')] ? q('cff_place') : 'home'; nt.format = FORMATS[q('cff_format')] ? q('cff_format') : 'video'; nt.reqs = reqsFor(nt.place, nt.format); }
         e.tasks.push(nt);
         ui.form = false; ui.tab = 'avail'; commit();
-        genStepsFor(who, nt.id).catch((err) => console.warn('[Career&Fame] шаги по умолчанию:', err.message)).finally(commit);
+        genStepsFor(who, nt.id).catch((err) => console.warn('[Career&Fame] default steps:', err.message)).finally(commit);
         break;
       }
       case 'lift': if (e) liftCancel(who, e); commit(); break;
       case 'cancelbtn': {
-        const reason = prompt('За что отмена?'); if (!reason) break;
-        applyCancel(who, e, prompt('Степень 1–3 (1 скандал, 2 отмена, 3 тотальная):', '2'), reason); commit(); break;
+        const reason = prompt(tr('За что отмена?', 'Why is the cancellation?')); if (!reason) break;
+        applyCancel(who, e, prompt(tr('Степень 1–3 (1 скандал, 2 отмена, 3 тотальная):', 'Severity 1–3 (1 scandal, 2 cancelled, 3 total):'), '2'), reason); commit(); break;
       }
       case 'xp':
-        gainXp(who, e, parseInt(prompt('Изменить опыт на (±):', '20')) || 0);
-        gainFame(e, parseInt(prompt('Изменить славу на (±):', '10')) || 0); commit(); break;
+        gainXp(who, e, parseInt(prompt(tr('Изменить опыт на (±):', 'Change XP by (±):'), '20')) || 0);
+        gainFame(e, parseInt(prompt(tr('Изменить славу на (±):', 'Change fame by (±):'), '10')) || 0); commit(); break;
       case 'move':
-        if (e && MOVES[v] && confirm(`Совершить: ${MOVES[v].name}?`)) { applyMove(who, e, v, 'вручную'); ui.screen = 'feed'; commit(); }
+        if (e && MOVES[v] && confirm(tr(`Совершить: ${bi(MOVES[v].name)}?`, `Do: ${bi(MOVES[v].name)}?`))) { applyMove(who, e, v, tr('вручную', 'manual')); ui.screen = 'feed'; commit(); }
         break;
+      case 'stalkhide': if (e) { e.stalkerHidden = true; commit(); } break;
+      case 'stalkshow': if (e) { e.stalkerHidden = false; commit(); } break;
+      case 'stalkresolve': if (e) { e.stalker = null; e.stalkerCool = 60; e.stalkerHidden = false; e.tasks.forEach((t) => { if (t.type === 'stalker') t.done = true; }); addLog(e, tr('🛡️ Сталкер больше не беспокоит', '🛡️ The stalker no longer bothers you')); commit(); } break;
+      case 'tagoff': if (e) { delete e.tags.cuck; commit(); } break;
+      case 'tagon': if (e) { e.tags.cuck = { from: who }; commit(); } break;
+      case 'editthreat': {
+        const h = prompt(tr('Уровень хейтеров 0–100:', 'Haters level 0–100:'), String(e.haters)); if (h === null) break;
+        const p = prompt(tr('Приватность 0–100:', 'Privacy 0–100:'), String(e.privacy)); if (p === null) break;
+        e.haters = clamp(parseInt(h) || 0, 0, 100); e.privacy = clamp(parseInt(p) || 0, 0, 100); commit(); break;
+      }
       case 'analyze': await busy(() => analyze(true)); break;
       case 'reset':
-        if (confirm('Сбросить всю карьеру в этом чате?')) { ctx().chatMetadata[MODULE] = { entities: {} }; commit(); }
+        if (confirm(tr('Сбросить всю карьеру в этом чате?', 'Reset all career data in this chat?'))) { ctx().chatMetadata[MODULE] = { entities: {} }; commit(); }
         break;
       case 'loadmodels': await safe(async () => {
         const s = S();
         const res = await fetch(s.endpointUrl.replace(/\/$/, '') + '/models', { headers: s.endpointKey ? { Authorization: `Bearer ${s.endpointKey}` } : {} });
-        if (!res.ok) throw new Error(`Не удалось получить модели: ${res.status}`);
+        if (!res.ok) throw new Error(tr(`Не удалось получить модели: ${res.status}`, `Could not get models: ${res.status}`));
         const j = await res.json();
         ui.models = (j.data || j.models || []).map((m) => m.id || m.name || m);
-        toastr.success(`Моделей: ${ui.models.length}`, 'Career & Fame'); renderPhone();
+        toastr.success(tr(`Моделей: ${ui.models.length}`, `Models: ${ui.models.length}`), 'Career & Fame'); renderPhone();
       }); break;
     }
+  }
+  function syncOpacityUI() {
+    const pct = Math.round(S().opacity * 100);
+    const a = document.getElementById('cfp_opv'); if (a) a.textContent = pct + '%';
+    const b = document.getElementById('cfp_opb'); if (b) b.textContent = pct + '%';
+    document.querySelectorAll && document.querySelectorAll('[data-set="opacity"], #cf_d_op').forEach((i) => { if (i.value != pct) i.value = pct; });
   }
   function onInput(ev) {
     const el = ev.target, k = el.getAttribute && el.getAttribute('data-set');
     if (!k || el.type === 'checkbox' || el.tagName === 'SELECT') return;
     const s = S();
-    if (k === 'opacity') { s.opacity = clamp(parseInt(el.value) / 100, 0.3, 1); applyOpacity(); const o = document.getElementById('cfp_opv'); if (o) o.textContent = Math.round(s.opacity * 100) + '%'; const d = document.getElementById('cf_d_op'); if (d) d.value = Math.round(s.opacity * 100); }
+    if (k === 'opacity') { s.opacity = clamp(parseInt(el.value) / 100, 0.3, 1); applyOpacity(); syncOpacityUI(); }
+    else if (k === 'exposeScale') s[k] = clamp(parseInt(el.value) || 0, 0, 300);
     else s[k] = el.value;
     saveSettings();
   }
   function onChange(ev) {
-    const el = ev.target, k = el.getAttribute && el.getAttribute('data-set');
-    if (!k) return;
+    const el = ev.target; if (!el.getAttribute) return;
+    const ck = el.getAttribute('data-chance');
+    if (ck) {
+      const s = S();
+      if (el.value === '') delete s.cancelChance[ck]; else s.cancelChance[ck] = clamp(parseInt(el.value) || 0, 0, 100);
+      saveSettings(); renderPhone(); return;
+    }
+    const k = el.getAttribute('data-set');
+    if (!k || k === 'opacity' || k === 'exposeScale') return;
     const s = S();
-    if (el.type === 'checkbox') s[k] = el.checked; else if (k !== 'opacity') s[k] = el.value; else return;
-    saveSettings(); syncDrawer();
-    if (['enabled', 'mode', 'showFab', 'inject', 'demandActions'].includes(k)) { updateFab(); updatePrompt(); renderPhone(); }
+    if (el.type === 'checkbox') s[k] = el.checked; else s[k] = el.value;
+    saveSettings();
+    if (k === 'lang') return setLang(s.lang);
+    syncDrawer();
+    updateFab(); updatePrompt(); renderPhone();
   }
 
   function initFab() {
@@ -894,7 +1077,24 @@
   function syncDrawer() {
     const s = S();
     if (typeof $ === 'undefined') return;
-    $('#cf_d_enabled').prop('checked', s.enabled); $('#cf_d_fab').prop('checked', s.showFab); $('#cf_d_op').val(Math.round(s.opacity * 100));
+    $('#cf_d_enabled').prop('checked', s.enabled); $('#cf_d_fab').prop('checked', s.showFab); $('#cf_d_op').val(Math.round(s.opacity * 100)); $('#cf_d_lang').val(s.lang);
+  }
+  function buildDrawer() {
+    if (typeof $ === 'undefined' || !$('#cf_drawer_body').length) return;
+    $('#cf_drawer_body').html(`
+      <label class="checkbox_label"><input type="checkbox" id="cf_d_enabled"><span>${tr('Включено', 'Enabled')}</span></label>
+      <label class="checkbox_label"><input type="checkbox" id="cf_d_fab"><span>${tr('Плавающая кнопка 📱', 'Floating button 📱')}</span></label>
+      <label>🌐 ${tr('Язык', 'Language')}</label><select id="cf_d_lang" class="text_pole"><option value="ru">Русский</option><option value="en">English</option></select>
+      <label>${tr('Непрозрачность телефона', 'Phone opacity')}</label><input type="range" id="cf_d_op" min="30" max="100" step="5" style="width:100%">
+      <div class="menu_button" id="cf_d_open">📱 ${tr('Открыть телефон', 'Open the phone')}</div>
+      <small>${tr('Остальные настройки (модель, угрозы, ярлыки, шанс отмены) — в приложениях внутри телефона.', 'Other settings (model, threats, labels, cancel chance) are inside the phone apps.')}</small>`);
+    syncDrawer();
+    const s = S();
+    $('#cf_d_enabled').on('change', function () { s.enabled = this.checked; saveSettings(); updateFab(); updatePrompt(); renderPhone(); });
+    $('#cf_d_fab').on('change', function () { s.showFab = this.checked; saveSettings(); updateFab(); });
+    $('#cf_d_lang').on('change', function () { setLang(this.value); });
+    $('#cf_d_op').on('input', function () { s.opacity = clamp(parseInt(this.value) / 100, 0.3, 1); applyOpacity(); saveSettings(); syncOpacityUI(); });
+    $('#cf_d_open').on('click', () => setOpen(true));
   }
   function mountUI() {
     document.body.insertAdjacentHTML('beforeend', '<div id="cf_fab" title="Career & Fame">📱<span class="cf-badge"></span></div><div id="cf_phone" class="cf-phone"></div>');
@@ -904,26 +1104,14 @@
     phone.addEventListener('change', onChange);
     initFab(); applyOpacity(); updateFab();
     setInterval(() => { const t = document.querySelector('#cf_phone .cfp-time'); if (t) t.textContent = clock(); }, 30000);
-
-    const s = S();
     $('#extensions_settings2').append(`<div class="extension_container"><div class="inline-drawer">
       <div class="inline-drawer-toggle inline-drawer-header"><b>🌟 Career &amp; Fame</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
-      <div class="inline-drawer-content">
-        <label class="checkbox_label"><input type="checkbox" id="cf_d_enabled"><span>Включено</span></label>
-        <label class="checkbox_label"><input type="checkbox" id="cf_d_fab"><span>Плавающая кнопка 📱</span></label>
-        <label>Непрозрачность телефона</label><input type="range" id="cf_d_op" min="30" max="100" step="5" style="width:100%">
-        <div class="menu_button" id="cf_d_open">📱 Открыть телефон</div>
-        <small>Остальные настройки (модель, промпт, авто-анализ) — в приложении ⚙️ внутри телефона.</small>
-      </div></div></div>`);
-    syncDrawer();
-    $('#cf_d_enabled').on('change', function () { s.enabled = this.checked; saveSettings(); updateFab(); updatePrompt(); renderPhone(); });
-    $('#cf_d_fab').on('change', function () { s.showFab = this.checked; saveSettings(); updateFab(); });
-    $('#cf_d_op').on('input', function () { s.opacity = clamp(parseInt(this.value) / 100, 0.3, 1); applyOpacity(); saveSettings(); const o = document.getElementById('cfp_opv'); if (o) o.textContent = Math.round(s.opacity * 100) + '%'; });
-    $('#cf_d_open').on('click', () => setOpen(true));
+      <div class="inline-drawer-content" id="cf_drawer_body"></div></div></div>`);
+    buildDrawer();
   }
 
   /* =====================  СОБЫТИЯ  ===================== */
-  if (globalThis.__CF_TEST__) globalThis.__CF_TEST__.api = { ent, genTask, acceptTask, dropTask, completeTask, analyze, applyMove, applyContent, endLive, applyCancel, tickTurn, renderPhone, onClick, ui, S, updatePrompt, uid };
+  if (globalThis.__CF_TEST__) globalThis.__CF_TEST__.api = { ent, genTask, acceptTask, dropTask, completeTask, analyze, applyMove, applyContent, endLive, applyCancel, tickTurn, renderPhone, onClick, onChange, ui, S, updatePrompt, uid, switchCareer, startDoxx, spawnStalker, doxxChance, setLang, chanceOf, MOVES };
   jQuery(() => {
     const c = ctx();
     mountUI(); updatePrompt(); renderPhone();

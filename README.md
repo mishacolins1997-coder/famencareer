@@ -1,7 +1,6 @@
-# Career & Fame 2.0 — расширение для SillyTavern
+# Career & Fame 3.0 — SillyTavern extension / расширение для SillyTavern
 
-Установка: папку `career-fame` в `SillyTavern/public/scripts/extensions/third-party/`
-(или `data/<user>/extensions/`), перезапуск ST.
+Install / Установка: copy the `career-fame` folder to `SillyTavern/public/scripts/extensions/third-party/` (or `data/<user>/extensions/`) and restart ST.
 
-Плавающая кнопка 📱 открывает «телефон» с приложениями: Карьера, Задания, События, Аудитория, Спорное, Настройки.
-Кнопку можно перетаскивать. Непрозрачность — в ⚙️ внутри телефона или в панели расширений.
+The floating 📱 button opens the phone: Career, Tasks, Content, Events, Audience, Threats, Controversy, Settings.
+Language (RU/EN) and opacity are right in the phone's status bar.
