@@ -105,6 +105,16 @@
     if (c.name2 && c.name2 !== c.name1) list.push(c.name2);
     return list;
   }
+  const END_STEP = 'Завершить задание: закончить дело и покинуть место действия';
+  const progressOf = (t) => (t.done ? 100 : Math.min(99, Math.round((t.steps.filter((x) => x.done).length / (t.steps.length || 1)) * 100)));
+  function normTask(t) {
+    if (!Array.isArray(t.steps)) t.steps = [];
+    t.steps = t.steps.map((x) => (typeof x === 'string' ? { text: x, done: false } : { text: String(x?.text ?? ''), done: !!x?.done })).filter((x) => x.text);
+    if (!t.steps.length) t.steps = [{ text: `Выполнить: ${t.title}`, done: false }, { text: END_STEP, done: false }];
+    t.progress = progressOf(t);
+    return t;
+  }
+  const stepsLine = (t) => t.steps.map((x) => `${x.done ? '☑' : '☐'} ${x.text}`).join(' → ');
   function ent(name) {
     const st = chatState();
     if (!st.entities[name]) st.entities[name] = { career: null, level: 1, xp: 0, fame: 0, cancel: null, tasks: [], log: [] };
@@ -114,6 +124,7 @@
     if (e.heat === undefined) e.heat = 0;
     if (!e.moves) e.moves = [];
     if (e.reaction === undefined) e.reaction = null;
+    e.tasks.forEach(normTask);
     return e;
   }
   const careerOf = (e) => (e.career && CAREERS[e.career]) || null;
@@ -255,51 +266,120 @@
       if (!res.ok) throw new Error(`Endpoint: ${res.status}`);
       return (await res.json()).choices?.[0]?.message?.content ?? '';
     }
-    try { return await c.generateRaw({ prompt: user, systemPrompt: system, responseLength: maxTokens }); }
-    catch (e) { return await c.generateRaw(user, null, false, false, system, maxTokens); }
+    let out = '';
+    try { out = await c.generateRaw({ prompt: user, systemPrompt: system, responseLength: maxTokens }); } catch (e) { console.warn('[Career&Fame] generateRaw(object)', e); }
+    if (!out || !String(out).trim()) {
+      try { out = await c.generateRaw(user, null, false, false, system, maxTokens); } catch (e) { console.warn('[Career&Fame] generateRaw(legacy)', e); }
+    }
+    return out || '';
+  }
+  // Достаёт JSON из «грязного» ответа: markdown-обёртки, <think>, текст вокруг, обрезанный конец, лишние запятые.
+  function extractJson(text) {
+    let t = String(text ?? '')
+      .replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '')
+      .replace(/<think(?:ing)?>[\s\S]*$/gi, '')
+      .replace(/```(?:json|JSON)?/g, '');
+    const start = t.indexOf('{');
+    if (start < 0) return null;
+    const stack = []; let inStr = false, esc = false, end = -1;
+    for (let i = start; i < t.length; i++) {
+      const ch = t[i];
+      if (inStr) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inStr = false; continue; }
+      if (ch === '"') inStr = true;
+      else if (ch === '{' || ch === '[') stack.push(ch);
+      else if (ch === '}' || ch === ']') { stack.pop(); if (!stack.length) { end = i; break; } }
+    }
+    if (end >= 0) return t.slice(start, end + 1);
+    // ответ оборвался — пробуем «достроить»
+    let r = t.slice(start);
+    if (inStr) r += '"';
+    r = r.replace(/[,:\s]+$/, '');
+    while (stack.length) r += stack.pop() === '{' ? '}' : ']';
+    return r;
   }
   function parseJson(text) {
-    const m = String(text).match(/\{[\s\S]*\}/);
-    if (!m) throw new Error('Модель не вернула JSON');
-    return JSON.parse(m[0]);
+    const raw = extractJson(text);
+    const snippet = String(text ?? '').trim().replace(/\s+/g, ' ').slice(0, 160);
+    if (!raw) throw new Error(snippet ? `Модель не вернула JSON. Её ответ: «${snippet}»` : 'Модель вернула пустой ответ (проверьте модель/лимит токенов в настройках)');
+    const attempts = [raw, raw.replace(/,\s*([}\]])/g, '$1'), raw.replace(/,\s*([}\]])/g, '$1').replace(/'/g, '"')];
+    for (const a of attempts) { try { return JSON.parse(a); } catch (_) { /* следующая попытка */ } }
+    throw new Error(`Не удалось разобрать JSON. Ответ модели: «${snippet}»`);
+  }
+  async function askJson(system, user, maxTokens, fallback) {
+    const first = await callLLM(system, user, maxTokens);
+    try { return parseJson(first); } catch (err1) {
+      console.warn('[Career&Fame] ответ без JSON, повторяю запрос:', first);
+      const strict = system + ' Ответ — СТРОГО один JSON-объект: без пояснений, без markdown, без рассуждений.';
+      const second = await callLLM(strict, user + '\n\nВерни ТОЛЬКО JSON-объект.', maxTokens + 400);
+      try { return parseJson(second); } catch (err2) {
+        console.warn('[Career&Fame] повтор тоже без JSON:', second);
+        const f = fallback && (fallback(second) || fallback(first));
+        if (f) return f;
+        throw err2;
+      }
+    }
+  }
+  // запасной вариант: если модель ответила обычным текстом — собираем задание из него
+  function textToTask(text) {
+    const lines = String(text ?? '').replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '').split('\n').map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) return null;
+    const clean = (l) => l.replace(/^[#>*\-\s"«]+|[*"»\s]+$/g, '').replace(/^(название|задание|title)\s*[:\-—]\s*/i, '');
+    const steps = lines.map((l) => l.match(/^(?:\d+[.)]|[-•*])\s+(.+)/)?.[1]).filter(Boolean).map(clean).slice(0, 5);
+    const plain = lines.filter((l) => !/^(?:\d+[.)]|[-•*])\s+/.test(l));
+    const hasTitleKey = lines.some((l) => /^[#*\s]*(название|title)\s*[:\-—]/i.test(l));
+    if (!plain.length || (!steps.length && !hasTitleKey)) return null; // отказ/болтовня — не превращаем в задание
+    return { title: clean(plain[0]).slice(0, 80) || 'Задание', desc: plain[1] ? clean(plain[1]) : '', steps, xp: 20, fame: 10 };
   }
 
   function stateSummary() {
     return names().map((n) => {
       const e = ent(n);
       const open = e.tasks.filter((t) => !t.done)
-        .map((t) => `[${t.id}] «${t.title}» (${t.active ? 'ВЗЯТО' : 'не взято'}, прогресс ${t.progress || 0}%; шаги: ${(t.steps || []).join(' → ') || t.desc})`).join('; ') || 'нет';
+        .map((t) => `[${t.id}] «${t.title}» (${t.active ? 'ВЗЯТО' : 'не взято'}; шаги: ${t.steps.map((x, i) => `${i + 1}.${x.done ? '[x]' : '[ ]'} ${x.text}`).join(' ')})`).join('; ') || 'нет';
       return `- ${n}: ${titleOf(e)}, ур.${e.level}, слава ${e.fame} (${fameTier(e.fame)}), ${e.cancel ? 'ОТМЕНЁН (' + e.cancel.reason + ')' : 'в порядке'}; аудитория: фанаты ${mood(e.audience.loyal)}, бренды ${mood(e.audience.brands)}, публика ${mood(e.audience.public)}; недавние спорные ходы: ${e.moves.slice(0, 3).map((x) => MOVES[x.type]?.name).join(', ') || 'нет'}; задания: ${open}`;
     }).join('\n');
   }
 
-  async function analyze() {
+  async function analyze(manual = false) {
     const c = ctx();
     if (!c.chat?.length) return;
     const active = names().filter((n) => ent(n).career);
     if (!active.length) return;
-    const recent = c.chat.slice(-4).map((m) => `${m.name}: ${m.mes}`).join('\n\n');
+    const recent = c.chat.slice(-6).map((m) => `${m.name}: ${m.mes}`).join('\n\n');
     const system = 'Ты — движок карьеры и славы в ролевой игре. Отвечай ТОЛЬКО валидным JSON без пояснений.';
     const user = `Состояние:\n${stateSummary()}\n\nПоследние сообщения:\n${recent}\n\n` +
       `Оцени, что произошло с карьерой/репутацией (только ${active.join(', ')}). Верни JSON:\n` +
       `{"events":[{"who":"имя","xp":-30..40,"fame":-50..80,"summary":"кратко",` +
-      `"task_progress":null или {"id":"id задания из списка","progress":0-100},"task_done":null или "id задания из списка",` +
+      `"tasks":[{"id":"id задания из списка","steps_done":[номера шагов, ЗАВЕРШЁННЫХ в тексте]}],` +
       `"cancel":null или {"severity":1-3,"reason":"за что"},"controversy":null или {"type":"adult|casino|scam|crypto|fake","note":"кратко"},"lift_cancel":false}]}\n` +
-      `ПРАВИЛА: прогресс и выполнение задания считаются ТОЛЬКО если в сообщениях реально описаны действия по этому заданию (даже если оно было «не взято» — тогда герой сам взялся за него); ` +
-      `task_done — только когда шаги задания действительно доведены до конца в тексте. Награда за задание выдаётся автоматически, ` +
+      `ПРАВИЛА ЗАДАНИЙ: в steps_done указывай номера шагов, которые персонаж/пользователь УЖЕ ФАКТИЧЕСКИ ЗАВЕРШИЛ в сообщениях (не «собирается», не «планирует»); шаги с [x] не повторяй; ` +
+      `это работает и для «не взятых» заданий, если герой сам за них взялся. Последний шаг отмечай, только когда герой действительно закончил дело и покинул место/сцену/довёл до логического конца ` +
+      `(например: приехал на съёмку → снялся в ролике → закончил и уехал). Задание завершится автоматически, когда отмечены все шаги, и награда выдаётся сама, ` +
       `поэтому xp/fame в событии — лишь за ДРУГИЕ события. Если ничего значимого — {"events":[]}. Отмена только за реально скандальные поступки. ` +
       `controversy ставь, только когда персонаж РЕАЛЬНО сделал или анонсировал такой шаг: adult — уход на платформу 18+ вроде OnlyFans; casino — реклама казино/лутбоксов/ставок; ` +
       `scam — реклама мошенников/скам-проектов; crypto — реклама крипто-пирамид/памп-схем; fake — фейковые розыгрыши/накрутка. ` +
       `Не засчитывай разговоры, угрозы и отказы, не повторяй уже учтённые недавние ходы. Если персонаж несовершеннолетний — всегда null.`;
-    const data = parseJson(await callLLM(system, user, 450));
+    let data;
+    try { data = await askJson(system, user, 900); }
+    catch (err) { if (manual) throw err; console.warn('[Career&Fame] авто-анализ пропущен:', err.message); return; }
     for (const ev of data.events || []) {
       if (!active.includes(ev.who)) continue;
       const e = ent(ev.who);
-      if (ev.task_progress?.id) {
-        const t = e.tasks.find((x) => x.id === ev.task_progress.id && !x.done);
-        if (t) { const pr = clamp(parseInt(ev.task_progress.progress) || 0, 0, 99); if (pr > 0 && !t.active) { t.active = true; addLog(e, `▶️ Герой сам взялся за задание: ${t.title}`); } t.progress = Math.max(t.progress || 0, pr); }
+      for (const tk of Array.isArray(ev.tasks) ? ev.tasks : []) {
+        const t = e.tasks.find((x) => x.id === tk?.id && !x.done);
+        if (!t) continue;
+        const idx = (Array.isArray(tk.steps_done) ? tk.steps_done : []).map((n) => parseInt(n) - 1).filter((i) => i >= 0 && i < t.steps.length);
+        if (!idx.length) continue;
+        const before = t.steps.filter((x) => x.done).length;
+        const upto = Math.max(...idx);
+        for (let i = 0; i <= upto; i++) t.steps[i].done = true; // последующий шаг подразумевает предыдущие
+        const after = t.steps.filter((x) => x.done).length;
+        if (after === before) continue;
+        if (!t.active) { t.active = true; addLog(e, `▶️ Герой сам взялся за задание: ${t.title}`); }
+        t.progress = progressOf(t);
+        addLog(e, `☑ «${t.title}»: шагов ${after}/${t.steps.length}`);
+        if (t.steps.every((x) => x.done)) completeTask(ev.who, e, t.id);
       }
-      if (ev.task_done) completeTask(ev.who, e, ev.task_done);
       gainXp(ev.who, e, clamp(parseInt(ev.xp) || 0, -30, 40));
       gainFame(e, clamp(parseInt(ev.fame) || 0, -50, 80));
       const cv = ev.controversy;
@@ -318,12 +398,27 @@
     const user = `Профессия: ${careerOf(e).name}, звание: ${titleOf(e)}, уровень ${e.level}, слава ${e.fame}.\n` +
       `Уже есть: ${e.tasks.filter((t) => !t.done).map((t) => t.title).join(', ') || 'нет'}.\n` +
       `Придумай одно новое задание, которое можно отыграть В СЮЖЕТЕ (конкретные действия). ` +
-      `JSON: {"title":"...","desc":"...","steps":["действие 1","действие 2","действие 3"],"xp":10-60,"fame":0-60}`;
-    const d = parseJson(await callLLM(system, user, 300));
+      `Задание — это законченный эпизод: от начала до завершения (например: приехать на съёмку → сняться в ролике → закончить и уехать). 3–5 шагов, ПОСЛЕДНИЙ шаг — завершение (герой закончил дело и покинул место/сцену). ` +
+      `JSON: {"title":"...","desc":"...","steps":["шаг 1","шаг 2","шаг 3"],"xp":10-60,"fame":0-60}`;
+    const d = await askJson(system, user, 900, textToTask);
     e.tasks.push({ id: uid(), type: 'task', src: 'ai', title: String(d.title || 'Задание'), desc: String(d.desc || ''),
-      steps: Array.isArray(d.steps) ? d.steps.slice(0, 5).map(String) : [],
+      steps: Array.isArray(d.steps) ? d.steps.slice(0, 6).map(String) : [],
       xp: clamp(parseInt(d.xp) || 20, 5, 80), fame: clamp(parseInt(d.fame) || 10, 0, 80), done: false, active: false, progress: 0 });
     toastr.success('Новое задание добавлено в «Доступные»', 'Career & Fame');
+  }
+
+  // Ручное задание: ИИ разбивает его на шаги (запасные шаги ставятся сразу, так что оно работает и без ответа модели)
+  async function genStepsFor(name, id) {
+    const e = ent(name); const t = e.tasks.find((x) => x.id === id);
+    if (!t) return;
+    const system = 'Ты разбиваешь задания для ролевой игры на шаги. Отвечай ТОЛЬКО валидным JSON.';
+    const user = `Задание: «${t.title}». ${t.desc || ''}\nРазбей его на 2–5 последовательных шагов, которые можно отыграть в сюжете. ` +
+      `ПОСЛЕДНИЙ шаг — завершение: герой закончил дело и покинул место/сцену. JSON: {"steps":["шаг 1","шаг 2"]}`;
+    const d = await askJson(system, user, 700, (txt) => { const x = textToTask(txt); return x && x.steps.length ? { steps: x.steps } : null; });
+    const fresh = ent(name).tasks.find((x) => x.id === id);
+    if (fresh && Array.isArray(d.steps) && d.steps.length >= 2 && !fresh.steps.some((x) => x.done)) {
+      fresh.steps = d.steps.slice(0, 6).map((x) => ({ text: String(x), done: false })); fresh.progress = 0;
+    }
   }
 
   /* =====================  ПРОМПТ  ===================== */
@@ -341,7 +436,8 @@
       const act = e.tasks.filter((t) => t.active && !t.done);
       if (act.length) {
         const isUser = n === c.name1;
-        l += '\n  Задания в работе: ' + act.map((t) => `«${t.title}» — ${t.desc || ''}${t.steps?.length ? ` (шаги: ${t.steps.join(' → ')})` : ''}, прогресс ${t.progress || 0}%`).join('; ') + '.';
+        l += '\n  Задания в работе: ' + act.map((t) => { const nx = t.steps.find((x) => !x.done); return `«${t.title}» — ${t.desc || ''} Шаги: ${stepsLine(t)}.${nx ? ` Сейчас нужно: ${nx.text}.` : ''}`; }).join(' ');
+        l += ' Задание завершается, только когда пройден последний шаг (герой закончил дело и покинул место/сцену); не пропускай шаги и доводи задание до логичного завершения.';
         if (s.demandActions) {
           l += isUser
             ? ` ${n} выполняет это сам в своих постах: не описывай его действия за него, а показывай мир, реакции, помехи и последствия; успех не засчитывай, пока он сам не отыграл нужные действия.`
@@ -401,8 +497,8 @@
 
   function taskCard(t) {
     const st = t.done ? '✅' : t.active ? '▶️' : '📋';
-    const steps = t.steps?.length ? `<div class="cfp-steps">${t.steps.map((s, i) => `<span>${i + 1}. ${E(s)}</span>`).join('')}</div>` : '';
-    const prog = t.active && !t.done ? `<div class="cfp-sub">Прогресс: ${t.progress || 0}%</div>${bar(t.progress || 0, '#4facfe')}` : '';
+    const steps = t.steps?.length ? `<div class="cfp-steps">${t.steps.map((x) => `<span class="${x.done ? 'sdone' : ''}">${x.done ? '☑' : '☐'} ${E(x.text)}</span>`).join('')}</div>` : '';
+    const prog = t.active && !t.done ? `<div class="cfp-sub">Прогресс: ${t.progress || 0}% (${t.steps.filter((x) => x.done).length}/${t.steps.length})</div>${bar(t.progress || 0, '#4facfe')}` : '';
     const b = [];
     if (!t.done) {
       b.push(t.active ? btn('drop', '⏸ Отказаться', t.id) : btn('take', '▶️ Взять', t.id, 'pri'));
@@ -574,9 +670,12 @@
         const q = (i) => document.getElementById(i)?.value ?? '';
         const title = q('cff_title').trim();
         if (!title) { toastr.warning('Введите название задания', 'Career & Fame'); break; }
-        e.tasks.push({ id: uid(), type: 'task', src: 'manual', title, desc: q('cff_desc').trim(), steps: [],
-          xp: clamp(parseInt(q('cff_xp')) || 25, 0, 200), fame: clamp(parseInt(q('cff_fame')) || 0, 0, 200), done: false, active: false, progress: 0 });
-        ui.form = false; ui.tab = 'avail'; commit(); break;
+        const nt = { id: uid(), type: 'task', src: 'manual', title, desc: q('cff_desc').trim(), steps: [],
+          xp: clamp(parseInt(q('cff_xp')) || 25, 0, 200), fame: clamp(parseInt(q('cff_fame')) || 0, 0, 200), done: false, active: false, progress: 0 };
+        e.tasks.push(nt);
+        ui.form = false; ui.tab = 'avail'; commit();
+        genStepsFor(who, nt.id).catch((err) => console.warn('[Career&Fame] шаги по умолчанию:', err.message)).finally(commit);
+        break;
       }
       case 'lift': if (e) liftCancel(who, e); commit(); break;
       case 'cancelbtn': {
@@ -589,7 +688,7 @@
       case 'move':
         if (e && MOVES[v] && confirm(`Совершить: ${MOVES[v].name}?`)) { applyMove(who, e, v, 'вручную'); ui.screen = 'feed'; commit(); }
         break;
-      case 'analyze': await busy(analyze); break;
+      case 'analyze': await busy(() => analyze(true)); break;
       case 'reset':
         if (confirm('Сбросить всю карьеру в этом чате?')) { ctx().chatMetadata[MODULE] = { entities: {} }; commit(); }
         break;
@@ -682,7 +781,7 @@
       if (!S().enabled) return;
       if (tickTurn()) { try { saveChat(); } catch (_) {} renderPhone(); updateFab(); }
       updatePrompt();
-      if (S().auto) safe(analyze);
+      if (S().auto) safe(() => analyze(false));
     });
   });
 })();

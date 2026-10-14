@@ -67,3 +67,4 @@
 .cfp-step.past { opacity: .8; }
 .cfp-step.now { opacity: 1; background: rgba(79,172,254,.2); }
 .cfp-note { background: rgba(255,255,255,.06); border-left: 3px solid #7f5af0; border-radius: 8px; padding: 6px 9px; margin-bottom: 6px; font-size: 12px; }
+.cfp-steps .sdone { opacity: .55; text-decoration: line-through; }
