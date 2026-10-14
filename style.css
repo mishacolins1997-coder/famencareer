@@ -1,0 +1,17 @@
+.cf-entity { border: 1px solid var(--SmartThemeBorderColor); border-radius: 8px; padding: 8px; margin: 8px 0; }
+.cf-entity h4 { margin: 0 0 6px; display: flex; justify-content: space-between; align-items: center; }
+.cf-bar { height: 8px; background: rgba(128,128,128,.25); border-radius: 4px; overflow: hidden; margin: 2px 0 6px; }
+.cf-bar > div { height: 100%; background: var(--SmartThemeQuoteColor, #4a9); }
+.cf-bar.fame > div { background: #e8b923; }
+.cf-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 4px 0; }
+.cf-cancel { background: rgba(200,40,40,.2); border: 1px solid rgba(200,40,40,.6); border-radius: 6px; padding: 4px 8px; margin: 4px 0; }
+.cf-task { display: flex; justify-content: space-between; gap: 6px; padding: 4px 0; border-top: 1px dashed var(--SmartThemeBorderColor); font-size: .9em; }
+.cf-task.done { opacity: .5; text-decoration: line-through; }
+.cf-log { font-size: .8em; opacity: .75; max-height: 120px; overflow-y: auto; }
+.cf-muted { opacity: .7; font-size: .85em; }
+.cf-task.active { background: rgba(80,170,120,.12); border-radius: 6px; padding: 4px; }
+.cf-bar.task > div { background: #4a90e2; }
+.cf-tbtns { display: flex; gap: 4px; align-items: flex-start; flex-shrink: 0; }
+.cf-bar.aud > div { background: #9b59b6; }
+.cf-bar.heat > div { background: #e74c3c; }
+.cf-react { background: rgba(155,89,182,.15); border: 1px solid rgba(155,89,182,.5); border-radius: 6px; padding: 4px 8px; margin: 4px 0; font-size: .85em; }
