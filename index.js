@@ -70,6 +70,40 @@
   };
   const MOVE_KEYS = Object.keys(MOVES);
 
+  // Блогер / стример: задания привязаны к месту и формату, у каждого сочетания свои требования
+  const PLACES = {
+    home:   { icon: '🏠', name: 'Дома',            mult: 1 },
+    street: { icon: '🌆', name: 'На улице',        mult: 1.2 },
+    event:  { icon: '🎪', name: 'На мероприятии',  mult: 1.4 },
+  };
+  const FORMATS = { video: '🎥 Видео/влог', stories: '📸 Сторис', post: '🖼️ Пост/фото', stream: '🔴 Стрим' };
+  const REQS = {
+    home: {
+      video:   ['Свет и аккуратный фон', 'Чистый звук без шума', 'Заряженная камера'],
+      stories: ['Хороший свет', 'Интересная идея кадра', 'Заряженный телефон'],
+      post:    ['Оформленный кадр и фон', 'Подпись и хэштеги'],
+      stream:  ['Стабильный интернет', 'Настроенные камера, микрофон и OBS', 'Тишина — предупредить домашних'],
+    },
+    street: {
+      video:   ['Выбрать локацию и проверить погоду', 'Защита микрофона от ветра и шума', 'Не снимать людей без согласия'],
+      stories: ['Живая локация и дневной свет', 'Осторожность с прохожими в кадре', 'Заряд и мобильный интернет'],
+      post:    ['Красивая локация и свет', 'Не мешать прохожим'],
+      stream:  ['Мобильный интернет и пауэрбанк', 'IRL-экипировка (телефон, стабилизатор)', 'Приватность: без лиц и номеров без согласия', 'Безопасность места'],
+    },
+    event: {
+      video:   ['Разрешение организаторов на съёмку', 'Шум вокруг — продумать звук', 'Соблюдать правила мероприятия'],
+      stories: ['Согласие организаторов', 'Отметить мероприятие и участников', 'Не мешать другим гостям'],
+      post:    ['Согласие организаторов', 'Отметки и хэштеги мероприятия'],
+      stream:  ['Согласовать трансляцию с организаторами', 'Проверить связь в толпе', 'Права на музыку и контент мероприятия', 'Модерация чата'],
+    },
+  };
+  const hasPlaces = (e) => e.career === 'blogger' || e.career === 'streamer';
+  const reqsFor = (place, format) => (REQS[place] && REQS[place][format]) || [];
+  const rewardOf = (t) => { const m = (PLACES[t.place] && PLACES[t.place].mult) || 1; return { xp: Math.round((t.xp || 0) * m), fame: Math.round((t.fame || 0) * m) }; };
+  const placeInfo = (t) => (t.place && PLACES[t.place] ? `; МЕСТО: ${PLACES[t.place].name}; формат: ${FORMATS[t.format] || 'любой'}; условия: ${(t.reqs || []).join(', ')}` : '');
+  const pickRnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const rollPlace = () => { const r = Math.random(); return r < 0.4 ? 'home' : r < 0.8 ? 'street' : 'event'; };
+
   const DEFAULTS = {
     enabled: true, inject: true, auto: true, demandActions: true,
     showFab: true, opacity: 0.95, fabX: null, fabY: null,
@@ -110,7 +144,11 @@
   function normTask(t) {
     if (!Array.isArray(t.steps)) t.steps = [];
     t.steps = t.steps.map((x) => (typeof x === 'string' ? { text: x, done: false } : { text: String(x?.text ?? ''), done: !!x?.done })).filter((x) => x.text);
-    if (!t.steps.length) t.steps = [{ text: `Выполнить: ${t.title}`, done: false }, { text: END_STEP, done: false }];
+    if (!t.steps.length) {
+      t.steps = [{ text: `Выполнить: ${t.title}`, done: false }, { text: END_STEP, done: false }];
+      if (t.place && PLACES[t.place]) t.steps.unshift({ text: `Подготовиться (${PLACES[t.place].name.toLowerCase()}): техника, условия, место`, done: false });
+    }
+    if (t.place && PLACES[t.place] && !Array.isArray(t.reqs)) t.reqs = reqsFor(t.place, t.format);
     t.progress = progressOf(t);
     return t;
   }
@@ -124,6 +162,9 @@
     if (e.heat === undefined) e.heat = 0;
     if (!e.moves) e.moves = [];
     if (e.reaction === undefined) e.reaction = null;
+    if (!e.stats) e.stats = { stream: 0, stories: 0, video: 0, post: 0 };
+    if (e.live === undefined) e.live = null;
+    if (!e.contentAt) e.contentAt = {};
     e.tasks.forEach(normTask);
     return e;
   }
@@ -189,10 +230,62 @@
     const t = e.tasks.find((x) => x.id === id && !x.done);
     if (!t) return;
     t.done = true; t.active = false; t.progress = 100;
-    gainXp(name, e, t.xp || 0); gainFame(e, t.fame || 0);
-    addLog(e, `🏆 Задание выполнено: ${t.title} (+${t.xp} XP, +${t.fame} славы)`);
-    toastr.success(`🏆 ${name}: «${t.title}» выполнено! +${t.xp} XP`, 'Career & Fame');
+    const rw = rewardOf(t);
+    gainXp(name, e, rw.xp); gainFame(e, rw.fame);
+    addLog(e, `🏆 Задание выполнено: ${t.title} (+${rw.xp} XP, +${rw.fame} славы)`);
+    toastr.success(`🏆 ${name}: «${t.title}» выполнено! +${rw.xp} XP`, 'Career & Fame');
     if (t.type === 'apology') liftCancel(name, e, '(извинения приняты)');
+  }
+
+  /* ---- Самостоятельный контент (без заданий): стримы, сторис, видео, посты ---- */
+  function computeViewers(e, place) {
+    const v = (15 + e.fame * 0.6) * PLACES[place].mult * (0.7 + Math.random() * 0.6) * (e.audience.loyal / 50) * (e.cancel ? 0.5 : 1);
+    return Math.max(3, Math.round(v));
+  }
+  function contentReward(e, format, place, q, ticks) {
+    const base = format === 'stream' ? { xp: 6 + Math.min(ticks, 10) * 3, fame: 6 + Math.min(ticks, 10) * 3 } : format === 'video' ? { xp: 12, fame: 12 } : { xp: 6, fame: 6 };
+    const qm = [0.5, 0.75, 1, 1.25, 1.5][clamp(q, 1, 5) - 1];
+    const career = hasPlaces(e) ? 1 : 0.6;            // не основной формат для этой профессии
+    const lvl = 1 / (1 + (e.level - 1) * 0.1);        // на высоких уровнях опыт даётся медленнее
+    const fm = 1 / (1 + e.fame / 800);                // и слава
+    return { xp: Math.round(base.xp * PLACES[place].mult * qm * career * lvl), fame: Math.round(base.fame * PLACES[place].mult * qm * career * fm) };
+  }
+  function finishContent(name, e, format, place, q, ticks, note, viewers) {
+    const rw = contentReward(e, format, place, q, ticks);
+    gainXp(name, e, rw.xp); gainFame(e, rw.fame);
+    e.stats[format] = (e.stats[format] || 0) + 1;
+    e.audience.loyal = clamp(e.audience.loyal + (q >= 4 ? 2 : q <= 1 ? -3 : 0), 0, 100);
+    const pl = PLACES[place];
+    addLog(e, `${FORMATS[format].split(' ')[0]} ${FORMATS[format].slice(3)} (${pl.icon} ${pl.name.toLowerCase()})${note ? `: ${note}` : ''} — ${viewers ? `~${viewers} зрителей, ` : ''}+${rw.xp} XP, +${rw.fame} славы`);
+    toastr.success(`${FORMATS[format]} — ${name}: +${rw.xp} XP, +${rw.fame} ⭐`, 'Career & Fame');
+  }
+  function startLive(name, e, place, note) {
+    e.live = { place, ticks: 0, viewers: computeViewers(e, place), note: note || '' };
+    addLog(e, `🔴 В эфире (${PLACES[place].icon} ${PLACES[place].name.toLowerCase()}), ~${e.live.viewers} зрителей${note ? `: ${note}` : ''}`);
+    toastr.info(`🔴 ${name} начал(а) стрим`, 'Career & Fame');
+  }
+  function endLive(name, e, q, auto) {
+    const l = e.live; if (!l) return;
+    e.live = null;
+    finishContent(name, e, 'stream', l.place, q || 3, l.ticks, l.note, l.viewers);
+    if (auto) addLog(e, '⏹ Стрим завершён автоматически (слишком долго без обновлений)');
+  }
+  function applyContent(name, e, ct) {
+    const format = ct && ct.format;
+    if (!FORMATS[format] || !e.career) return;
+    const place = PLACES[ct.place] ? ct.place : 'home';
+    const q = clamp(parseInt(ct.quality) || 3, 1, 5);
+    const act = ct.action || 'single';
+    if (format === 'stream') {
+      if (act === 'start') { if (!e.live) startLive(name, e, place, ct.note); return; }
+      if (act === 'end') { if (e.live) endLive(name, e, q); else finishContent(name, e, 'stream', place, q, 2, ct.note); return; }
+      if (!e.live) finishContent(name, e, 'stream', place, q, 2, ct.note);   // короткий стрим «одним куском»
+      return;
+    }
+    const at = ctx().chat?.length || 0;
+    if (!ct.force && at - (e.contentAt[format] ?? -99) < 4) return;          // защита от повторов
+    e.contentAt[format] = at;
+    finishContent(name, e, format, place, q, 0, ct.note);
   }
 
   function buildReaction(m, d) {
@@ -231,6 +324,7 @@
     for (const n of names()) {
       const e = ent(n);
       if (e.cancel) { e.cancel.left--; changed = true; if (e.cancel.left <= 0) liftCancel(n, e, '(публика забыла)'); }
+      if (e.live) { e.live.ticks++; e.live.viewers = computeViewers(e, e.live.place); changed = true; if (e.live.ticks >= 30) endLive(n, e, 3, true); }
       if (e.reaction) { e.reaction.left--; changed = true; if (e.reaction.left <= 0) e.reaction = null; }
       for (const k of Object.keys(SEG)) { const v = e.audience[k]; if (v < 50) { e.audience[k]++; changed = true; } else if (v > 50) { e.audience[k]--; changed = true; } }
       if (e.heat > 0) {
@@ -335,8 +429,8 @@
     return names().map((n) => {
       const e = ent(n);
       const open = e.tasks.filter((t) => !t.done)
-        .map((t) => `[${t.id}] «${t.title}» (${t.active ? 'ВЗЯТО' : 'не взято'}; шаги: ${t.steps.map((x, i) => `${i + 1}.${x.done ? '[x]' : '[ ]'} ${x.text}`).join(' ')})`).join('; ') || 'нет';
-      return `- ${n}: ${titleOf(e)}, ур.${e.level}, слава ${e.fame} (${fameTier(e.fame)}), ${e.cancel ? 'ОТМЕНЁН (' + e.cancel.reason + ')' : 'в порядке'}; аудитория: фанаты ${mood(e.audience.loyal)}, бренды ${mood(e.audience.brands)}, публика ${mood(e.audience.public)}; недавние спорные ходы: ${e.moves.slice(0, 3).map((x) => MOVES[x.type]?.name).join(', ') || 'нет'}; задания: ${open}`;
+        .map((t) => `[${t.id}] «${t.title}» (${t.active ? 'ВЗЯТО' : 'не взято'}${placeInfo(t)}; шаги: ${t.steps.map((x, i) => `${i + 1}.${x.done ? '[x]' : '[ ]'} ${x.text}`).join(' ')})`).join('; ') || 'нет';
+      return `- ${n}: ${titleOf(e)}, ур.${e.level}, слава ${e.fame} (${fameTier(e.fame)}), ${e.cancel ? 'ОТМЕНЁН (' + e.cancel.reason + ')' : 'в порядке'}; аудитория: фанаты ${mood(e.audience.loyal)}, бренды ${mood(e.audience.brands)}, публика ${mood(e.audience.public)}; недавние спорные ходы: ${e.moves.slice(0, 3).map((x) => MOVES[x.type]?.name).join(', ') || 'нет'}; ${e.live ? `ИДЁТ СТРИМ (${PLACES[e.live.place].name}, сообщений ${e.live.ticks}); ` : ''}задания: ${open}`;
     }).join('\n');
   }
 
@@ -351,14 +445,18 @@
       `Оцени, что произошло с карьерой/репутацией (только ${active.join(', ')}). Верни JSON:\n` +
       `{"events":[{"who":"имя","xp":-30..40,"fame":-50..80,"summary":"кратко",` +
       `"tasks":[{"id":"id задания из списка","steps_done":[номера шагов, ЗАВЕРШЁННЫХ в тексте]}],` +
-      `"cancel":null или {"severity":1-3,"reason":"за что"},"controversy":null или {"type":"adult|casino|scam|crypto|fake","note":"кратко"},"lift_cancel":false}]}\n` +
+      `"cancel":null или {"severity":1-3,"reason":"за что"},"controversy":null или {"type":"adult|casino|scam|crypto|fake","note":"кратко"},"content":null или {"format":"stream|stories|video|post","place":"home|street|event","action":"start|end|single","quality":1-5,"note":"кратко"},"lift_cancel":false}]}\n` +
       `ПРАВИЛА ЗАДАНИЙ: в steps_done указывай номера шагов, которые персонаж/пользователь УЖЕ ФАКТИЧЕСКИ ЗАВЕРШИЛ в сообщениях (не «собирается», не «планирует»); шаги с [x] не повторяй; ` +
       `это работает и для «не взятых» заданий, если герой сам за них взялся. Последний шаг отмечай, только когда герой действительно закончил дело и покинул место/сцену/довёл до логического конца ` +
       `(например: приехал на съёмку → снялся в ролике → закончил и уехал). Задание завершится автоматически, когда отмечены все шаги, и награда выдаётся сама, ` +
+      `Если у задания указано МЕСТО (дома / на улице / на мероприятии), шаги засчитываются только когда действия происходят именно там и с соблюдением условий; нарушение условий (съёмка людей без согласия, трансляция на мероприятии без разрешения и т.п.) — повод для cancel степени 1. ` +
       `поэтому xp/fame в событии — лишь за ДРУГИЕ события. Если ничего значимого — {"events":[]}. Отмена только за реально скандальные поступки. ` +
       `controversy ставь, только когда персонаж РЕАЛЬНО сделал или анонсировал такой шаг: adult — уход на платформу 18+ вроде OnlyFans; casino — реклама казино/лутбоксов/ставок; ` +
       `scam — реклама мошенников/скам-проектов; crypto — реклама крипто-пирамид/памп-схем; fake — фейковые розыгрыши/накрутка. ` +
-      `Не засчитывай разговоры, угрозы и отказы, не повторяй уже учтённые недавние ходы. Если персонаж несовершеннолетний — всегда null.`;
+      `Не засчитывай разговоры, угрозы и отказы, не повторяй уже учтённые недавние ходы. Если персонаж несовершеннолетний — всегда null. ` +
+      `content — САМОСТОЯТЕЛЬНЫЙ контент вне заданий, по собственной инициативе персонажа/пользователя: stream — action start, когда включил трансляцию, и end, когда закончил (пока стрим идёт — null); ` +
+      `stories/video/post — action single, один раз за публикацию; place — где это происходит; quality 1–5 — насколько удачно это показано в тексте. Не засчитывай планы и разговоры; ` +
+      `если действия являются шагами активного задания — используй tasks, а не content. Требования места действуют и здесь (нарушение — повод для cancel степени 1).`;
     let data;
     try { data = await askJson(system, user, 900); }
     catch (err) { if (manual) throw err; console.warn('[Career&Fame] авто-анализ пропущен:', err.message); return; }
@@ -382,6 +480,7 @@
       }
       gainXp(ev.who, e, clamp(parseInt(ev.xp) || 0, -30, 40));
       gainFame(e, clamp(parseInt(ev.fame) || 0, -50, 80));
+      if (ev.content) applyContent(ev.who, e, ev.content);
       const cv = ev.controversy;
       if (cv?.type && MOVES[cv.type] && !e.moves.some((x) => x.type === cv.type && c.chat.length - x.at < 6)) applyMove(ev.who, e, cv.type, cv.note);
       if (ev.cancel) applyCancel(ev.who, e, ev.cancel.severity, ev.cancel.reason);
@@ -391,28 +490,39 @@
     commit();
   }
 
-  async function genTask(name) {
+  async function genTask(name, opts = {}) {
     const e = ent(name);
     if (!careerOf(e)) { toastr.warning('Сначала выберите карьеру', 'Career & Fame'); return; }
+    let place, format, reqs = [];
+    if (hasPlaces(e)) {
+      place = PLACES[opts.place] ? opts.place : rollPlace();
+      format = FORMATS[opts.format] ? opts.format : pickRnd(Object.keys(FORMATS));
+      reqs = reqsFor(place, format);
+    }
+    const where = place ? `Формат: ${FORMATS[format]}. Место: ${PLACES[place].name}. Условия этого места: ${reqs.join('; ')}. ` +
+      `Задание ДОЛЖНО происходить именно там, а шаги — учитывать эти условия (подготовка, съёмка/трансляция, завершение). ` : '';
     const system = 'Ты придумываешь задания для карьеры в ролевой игре. Отвечай ТОЛЬКО валидным JSON.';
     const user = `Профессия: ${careerOf(e).name}, звание: ${titleOf(e)}, уровень ${e.level}, слава ${e.fame}.\n` +
-      `Уже есть: ${e.tasks.filter((t) => !t.done).map((t) => t.title).join(', ') || 'нет'}.\n` +
+      `Уже есть: ${e.tasks.filter((t) => !t.done).map((t) => t.title).join(', ') || 'нет'}.\n` + where +
       `Придумай одно новое задание, которое можно отыграть В СЮЖЕТЕ (конкретные действия). ` +
       `Задание — это законченный эпизод: от начала до завершения (например: приехать на съёмку → сняться в ролике → закончить и уехать). 3–5 шагов, ПОСЛЕДНИЙ шаг — завершение (герой закончил дело и покинул место/сцену). ` +
       `JSON: {"title":"...","desc":"...","steps":["шаг 1","шаг 2","шаг 3"],"xp":10-60,"fame":0-60}`;
     const d = await askJson(system, user, 900, textToTask);
-    e.tasks.push({ id: uid(), type: 'task', src: 'ai', title: String(d.title || 'Задание'), desc: String(d.desc || ''),
+    const t = { id: uid(), type: 'task', src: 'ai', title: String(d.title || 'Задание'), desc: String(d.desc || ''),
       steps: Array.isArray(d.steps) ? d.steps.slice(0, 6).map(String) : [],
-      xp: clamp(parseInt(d.xp) || 20, 5, 80), fame: clamp(parseInt(d.fame) || 10, 0, 80), done: false, active: false, progress: 0 });
-    toastr.success('Новое задание добавлено в «Доступные»', 'Career & Fame');
+      xp: clamp(parseInt(d.xp) || 20, 5, 80), fame: clamp(parseInt(d.fame) || 10, 0, 80), done: false, active: false, progress: 0 };
+    if (place) { t.place = place; t.format = format; t.reqs = reqs; }
+    e.tasks.push(t);
+    toastr.success(place ? `Новое задание: ${PLACES[place].icon} ${PLACES[place].name}, ${FORMATS[format]}` : 'Новое задание добавлено в «Доступные»', 'Career & Fame');
   }
 
   // Ручное задание: ИИ разбивает его на шаги (запасные шаги ставятся сразу, так что оно работает и без ответа модели)
   async function genStepsFor(name, id) {
     const e = ent(name); const t = e.tasks.find((x) => x.id === id);
     if (!t) return;
+    const where = t.place ? `Место: ${PLACES[t.place].name}; формат: ${FORMATS[t.format] || 'любой'}; условия: ${(t.reqs || []).join('; ')}. Шаги должны учитывать место и условия. ` : '';
     const system = 'Ты разбиваешь задания для ролевой игры на шаги. Отвечай ТОЛЬКО валидным JSON.';
-    const user = `Задание: «${t.title}». ${t.desc || ''}\nРазбей его на 2–5 последовательных шагов, которые можно отыграть в сюжете. ` +
+    const user = `Задание: «${t.title}». ${t.desc || ''}\n${where}Разбей его на 2–5 последовательных шагов, которые можно отыграть в сюжете. ` +
       `ПОСЛЕДНИЙ шаг — завершение: герой закончил дело и покинул место/сцену. JSON: {"steps":["шаг 1","шаг 2"]}`;
     const d = await askJson(system, user, 700, (txt) => { const x = textToTask(txt); return x && x.steps.length ? { steps: x.steps } : null; });
     const fresh = ent(name).tasks.find((x) => x.id === id);
@@ -433,11 +543,12 @@
       l += `\n  Аудитория: фанаты ${mood(e.audience.loyal)}, бренды и спонсоры ${mood(e.audience.brands)}, публика и СМИ ${mood(e.audience.public)}.`;
       if (e.reaction) l += `\n  Недавняя реакция аудитории (${e.reaction.text}). Покажи эти РАЗНЫЕ реакции в сюжете: комментарии, отписки/донаты, письма от агентов и спонсоров, новости. Фокус — социальные последствия.`;
       if (e.heat >= 50) l += ` Есть риск разоблачения: ходят слухи, журналисты и разоблачители присматриваются.`;
+      if (e.live) l += `\n  СЕЙЧАС ИДЁТ СТРИМ (${PLACES[e.live.place].icon} ${PLACES[e.live.place].name}), зрителей ~${e.live.viewers}. ${n === c.name1 ? `Не описывай действия ${n} за него: показывай чат, донаты, реакции зрителей и окружение.` : 'Показывай ход стрима: чат, донаты, реакции зрителей, помехи.'} Условия места: ${reqsFor(e.live.place, 'stream').join(', ')}.`;
       const act = e.tasks.filter((t) => t.active && !t.done);
       if (act.length) {
         const isUser = n === c.name1;
-        l += '\n  Задания в работе: ' + act.map((t) => { const nx = t.steps.find((x) => !x.done); return `«${t.title}» — ${t.desc || ''} Шаги: ${stepsLine(t)}.${nx ? ` Сейчас нужно: ${nx.text}.` : ''}`; }).join(' ');
-        l += ' Задание завершается, только когда пройден последний шаг (герой закончил дело и покинул место/сцену); не пропускай шаги и доводи задание до логичного завершения.';
+        l += '\n  Задания в работе: ' + act.map((t) => { const nx = t.steps.find((x) => !x.done); return `«${t.title}» — ${t.desc || ''}${t.place && PLACES[t.place] ? ` Место: ${PLACES[t.place].name}; условия: ${(t.reqs || []).join(', ')}.` : ''} Шаги: ${stepsLine(t)}.${nx ? ` Сейчас нужно: ${nx.text}.` : ''}`; }).join(' ');
+        l += ' Задание завершается, только когда пройден последний шаг (герой закончил дело и покинул место/сцену); не пропускай шаги и доводи задание до логичного завершения. Если у задания указано место — действия происходят именно там, с учётом условий (показывай подготовку и соблюдение или нарушение условий).';
         if (s.demandActions) {
           l += isUser
             ? ` ${n} выполняет это сам в своих постах: не описывай его действия за него, а показывай мир, реакции, помехи и последствия; успех не засчитывай, пока он сам не отыграл нужные действия.`
@@ -452,10 +563,11 @@
   }
 
   /* =====================  ТЕЛЕФОН (UI)  ===================== */
-  const ui = { open: false, screen: 'home', who: null, tab: 'avail', form: false, busy: false, models: [] };
+  const ui = { open: false, screen: 'home', who: null, tab: 'avail', form: false, busy: false, models: [], pickPlace: 'rand', pickFormat: 'rand', cPlace: 'home', cFormat: 'stream' };
   const APPS = [
     { id: 'career',   icon: '💼', name: 'Карьера',    bg: 'linear-gradient(135deg,#4facfe,#2563eb)' },
     { id: 'tasks',    icon: '🎯', name: 'Задания',    bg: 'linear-gradient(135deg,#43e97b,#0d9f6e)' },
+    { id: 'content',  icon: '📡', name: 'Контент',    bg: 'linear-gradient(135deg,#f472b6,#db2777)' },
     { id: 'feed',     icon: '📰', name: 'События',    bg: 'linear-gradient(135deg,#fbbf24,#f97316)' },
     { id: 'aud',      icon: '👥', name: 'Аудитория',  bg: 'linear-gradient(135deg,#c084fc,#7c3aed)' },
     { id: 'moves',    icon: '🎭', name: 'Спорное',    bg: 'linear-gradient(135deg,#fb7185,#e11d48)' },
@@ -476,7 +588,7 @@
       ${e.career ? `<div class="cfp-sub">${fameIcon(e.fame)} ${fameTier(e.fame)} · ${e.fame}/1000</div>${bar(e.fame / 10, '#fbbf24')}` : ''}</div></div>`;
     const cancel = e.cancel ? `<div class="cfp-card cfp-alert">${CANCEL[e.cancel.severity].icon} <b>${CANCEL[e.cancel.severity].label}</b>: ${E(e.cancel.reason)}<div class="cfp-sub">Осталось ~${e.cancel.left} сообщ.</div></div>` : '';
     const act = e.tasks.filter((t) => t.active && !t.done).length;
-    const badge = { tasks: act ? act : '', aud: e.cancel ? '!' : '', feed: e.reaction ? '•' : '' };
+    const badge = { content: e.live ? '🔴' : '', tasks: act ? act : '', aud: e.cancel ? '!' : '', feed: e.reaction ? '•' : '' };
     const grid = APPS.map((a) => `<div class="cfp-app" data-act="open" data-v="${a.id}"><div class="cfp-ico" style="background:${a.bg}">${a.icon}${badge[a.id] ? `<span class="cfp-bdg">${badge[a.id]}</span>` : ''}</div><span>${a.name}</span></div>`).join('');
     return prof + cancel + `<div class="cfp-grid">${grid}</div>`;
   }
@@ -492,11 +604,16 @@
       <div class="cfp-sub">Уровень ${e.level}/${maxLevel(e)} · опыт ${e.xp}/${e.level >= maxLevel(e) ? 'MAX' : need}</div>${bar(xpPct, '#34d399')}
       <div class="cfp-sub" style="margin-top:6px">${fameIcon(e.fame)} Слава: ${e.fame}/1000 — ${fameTier(e.fame)}</div>${bar(e.fame / 10, '#fbbf24')}
       <div style="margin-top:8px">${btn('xp', '🎁 ± XP / слава', '', '')}</div></div>
+      <div class="cfp-card"><div class="cfp-h">📊 Контент</div><div class="cfp-sub">🔴 Стримов: ${e.stats.stream} · 📸 Сторис: ${e.stats.stories} · 🎥 Видео: ${e.stats.video} · 🖼️ Постов: ${e.stats.post}</div></div>
       <div class="cfp-card"><div class="cfp-h">Карьерная лестница</div>${ladder}</div>`;
   }
 
   function taskCard(t) {
     const st = t.done ? '✅' : t.active ? '▶️' : '📋';
+    const rw = rewardOf(t);
+    const pl = t.place && PLACES[t.place];
+    const tags = pl ? `<div class="cfp-tags"><span>${pl.icon} ${pl.name}</span>${t.format ? `<span>${FORMATS[t.format]}</span>` : ''}${pl.mult > 1 ? `<span>×${pl.mult} награда</span>` : ''}</div>` +
+      (t.reqs && t.reqs.length ? `<div class="cfp-reqs">📋 ${t.reqs.map(E).join(' · ')}</div>` : '') : '';
     const steps = t.steps?.length ? `<div class="cfp-steps">${t.steps.map((x) => `<span class="${x.done ? 'sdone' : ''}">${x.done ? '☑' : '☐'} ${E(x.text)}</span>`).join('')}</div>` : '';
     const prog = t.active && !t.done ? `<div class="cfp-sub">Прогресс: ${t.progress || 0}% (${t.steps.filter((x) => x.done).length}/${t.steps.length})</div>${bar(t.progress || 0, '#4facfe')}` : '';
     const b = [];
@@ -506,8 +623,8 @@
     }
     b.push(btn('del', '🗑', t.id, 'ghost'));
     return `<div class="cfp-card cfp-task ${t.active && !t.done ? 'active' : ''} ${t.done ? 'done' : ''}">
-      <div class="cfp-th"><b>${st} ${E(t.title)}</b><span class="cfp-rew">+${t.xp} XP · +${t.fame} ⭐</span></div>
-      ${t.desc ? `<div class="cfp-sub">${E(t.desc)}</div>` : ''}${steps}${prog}<div class="cfp-tb">${b.join('')}</div></div>`;
+      <div class="cfp-th"><b>${st} ${E(t.title)}</b><span class="cfp-rew">+${rw.xp} XP · +${rw.fame} ⭐</span></div>
+      ${t.desc ? `<div class="cfp-sub">${E(t.desc)}</div>` : ''}${tags}${steps}${prog}<div class="cfp-tb">${b.join('')}</div></div>`;
   }
   function screenTasks(e, who) {
     if (!e.career) return needCareer(e);
@@ -515,13 +632,40 @@
     const list = { avail, work, done }[ui.tab] || avail;
     const seg = `<div class="cfp-seg">${[['avail', '📋 Доступные', avail.length], ['work', '▶️ В работе', work.length], ['done', '✅ Готово', done.length]]
       .map(([k, l, n]) => `<div class="${ui.tab === k ? 'on' : ''}" data-act="tab" data-v="${k}">${l} ${n}</div>`).join('')}</div>`;
+    const chips = (items, cur, act) => `<div class="cfp-chips">${items.map(([k, l]) => `<span class="cfp-chip ${cur === k ? 'on' : ''}" data-act="${act}" data-v="${k}">${l}</span>`).join('')}</div>`;
+    const picker = hasPlaces(e) ? `<div class="cfp-card"><div class="cfp-h">Параметры задания</div>
+      <div class="cfp-sub">Место</div>${chips([['rand', '🎲 Любое'], ...Object.entries(PLACES).map(([k, p]) => [k, `${p.icon} ${p.name}`])], ui.pickPlace, 'pickplace')}
+      <div class="cfp-sub">Формат</div>${chips([['rand', '🎲 Любой'], ...Object.entries(FORMATS)], ui.pickFormat, 'pickformat')}
+      <div class="cfp-sub" style="margin-top:4px">Требования зависят от места и формата. Награда: дома ×1, на улице ×1.2, на мероприятии ×1.4.</div></div>` : '';
+    const placeSel = hasPlaces(e) ? `<div class="cfp-row"><select class="cfp-in" id="cff_place">${Object.entries(PLACES).map(([k, p]) => `<option value="${k}" ${ui.pickPlace === k ? 'selected' : ''}>${p.icon} ${p.name}</option>`).join('')}</select>
+      <select class="cfp-in" id="cff_format">${Object.entries(FORMATS).map(([k, l]) => `<option value="${k}" ${ui.pickFormat === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>` : '';
     const top = `<div class="cfp-row">${btn('newtask', ui.busy ? '⏳ Генерация…' : '🎯 Задание от ИИ', '', 'pri')}${btn('addform', ui.form ? '✖ Закрыть' : '✍️ Вручную')}</div>`;
     const form = ui.form ? `<div class="cfp-card"><div class="cfp-h">Новое задание</div>
-      <input class="cfp-in" id="cff_title" placeholder="Название"><input class="cfp-in" id="cff_desc" placeholder="Что нужно сделать">
+      <input class="cfp-in" id="cff_title" placeholder="Название"><input class="cfp-in" id="cff_desc" placeholder="Что нужно сделать">${placeSel}
       <div class="cfp-row"><input class="cfp-in" id="cff_xp" type="number" value="25" placeholder="XP"><input class="cfp-in" id="cff_fame" type="number" value="10" placeholder="Слава"></div>
       ${btn('submitform', '＋ Добавить', '', 'pri')}</div>` : '';
     const hint = ui.tab === 'work' && work.length ? `<div class="cfp-sub" style="margin-bottom:6px">Выполняйте задания в ролевой: награда придёт за действия, показанные в постах.</div>` : '';
-    return top + form + seg + hint + (list.length ? list.map(taskCard).join('') : empty({ avail: 'Нет доступных заданий', work: 'Нет заданий в работе — возьмите одно из «Доступных»', done: 'Пока ничего не выполнено' }[ui.tab]));
+    return picker + top + form + seg + hint + (list.length ? list.map(taskCard).join('') : empty({ avail: 'Нет доступных заданий', work: 'Нет заданий в работе — возьмите одно из «Доступных»', done: 'Пока ничего не выполнено' }[ui.tab]));
+  }
+
+  function screenContent(e, who) {
+    if (!e.career) return needCareer(e);
+    const stats = `<div class="cfp-card"><div class="cfp-h">📊 Ваш контент</div><div class="cfp-sub">🔴 Стримов: ${e.stats.stream} · 📸 Сторис: ${e.stats.stories} · 🎥 Видео: ${e.stats.video} · 🖼️ Постов: ${e.stats.post}</div></div>`;
+    if (e.live) {
+      const l = e.live;
+      return `<div class="cfp-card cfp-alert"><div class="cfp-h">🔴 В ЭФИРЕ</div><div class="cfp-sub">${PLACES[l.place].icon} ${PLACES[l.place].name} · ~${l.viewers} зрителей · сообщений в эфире: ${l.ticks}</div>
+        <div class="cfp-reqs">📋 ${reqsFor(l.place, 'stream').map(E).join(' · ')}</div>
+        <div style="margin-top:8px">${btn('contentstop', '⏹ Завершить стрим', '', 'danger')}</div></div>
+        <div class="cfp-sub">Чем дольше и удачнее стрим, тем больше награда после завершения.</div>${stats}`;
+    }
+    const chips = (items, cur, act) => `<div class="cfp-chips">${items.map(([k, l]) => `<span class="cfp-chip ${cur === k ? 'on' : ''}" data-act="${act}" data-v="${k}">${l}</span>`).join('')}</div>`;
+    const go = ui.cFormat === 'stream' ? btn('contentgo', '▶️ Начать стрим', '', 'pri') : btn('contentgo', '📤 Опубликовать', '', 'pri');
+    return `<div class="cfp-card"><div class="cfp-h">Выйти в эфир или опубликовать</div>
+      <div class="cfp-sub">Место</div>${chips(Object.entries(PLACES).map(([k, p]) => [k, `${p.icon} ${p.name}`]), ui.cPlace, 'cplace')}
+      <div class="cfp-sub">Формат</div>${chips(Object.entries(FORMATS), ui.cFormat, 'cformat')}
+      <div class="cfp-reqs">📋 ${reqsFor(ui.cPlace, ui.cFormat).map(E).join(' · ')}</div>
+      <div style="margin-top:8px">${go}</div></div>
+      <div class="cfp-sub" style="margin-bottom:8px">Можно и не нажимать: если вы или персонаж сами включите стрим или снимете сторис в сюжете, расширение заметит это и начислит награду.</div>${stats}`;
   }
 
   function screenFeed(e, who) {
@@ -578,7 +722,7 @@
       <div class="cfp-card"><div class="cfp-row">${btn('analyze', ui.busy ? '⏳ Анализ…' : '🔍 Проанализировать сейчас', '', 'pri')}${btn('reset', '🗑 Сбросить чат', '', 'danger')}</div></div>`;
   }
 
-  const TITLES = { home: 'Career & Fame', career: '💼 Карьера', tasks: '🎯 Задания', feed: '📰 События', aud: '👥 Аудитория', moves: '🎭 Спорные ходы', settings: '⚙️ Настройки' };
+  const TITLES = { content: '📡 Контент', home: 'Career & Fame', career: '💼 Карьера', tasks: '🎯 Задания', feed: '📰 События', aud: '👥 Аудитория', moves: '🎭 Спорные ходы', settings: '⚙️ Настройки' };
 
   function renderPhone() {
     const root = document.getElementById('cf_phone');
@@ -590,7 +734,7 @@
     if (!S().enabled) body = empty('Расширение выключено', `<div>${btn('open', '⚙️ Настройки', '', '', 'settings')}</div>`);
     else if (ui.screen === 'settings') body = screenSettings();
     else if (!e) body = empty('Откройте чат с персонажем');
-    else body = ({ home: screenHome, career: screenCareer, tasks: screenTasks, feed: screenFeed, aud: screenAud, moves: screenMoves }[ui.screen] || screenHome)(e, who);
+    else body = ({ home: screenHome, content: screenContent, career: screenCareer, tasks: screenTasks, feed: screenFeed, aud: screenAud, moves: screenMoves }[ui.screen] || screenHome)(e, who);
     const whoBar = e && ui.screen !== 'settings' && S().enabled
       ? `<div class="cfp-who">${names().map((n) => `<div class="cfp-pill ${n === who ? 'on' : ''}" data-act="who" data-v="${E(n)}">${iconOf(ent(n))} ${E(n)}</div>`).join('')}</div>` : '';
     root.innerHTML = `<div class="cfp-notch"></div>
@@ -606,10 +750,10 @@
     if (!fab) return;
     const s = S();
     fab.style.display = s.enabled && s.showFab ? 'flex' : 'none';
-    let n = 0, cancelled = false;
-    for (const nm of names()) { const e = ent(nm); n += e.tasks.filter((t) => t.active && !t.done).length; if (e.cancel) cancelled = true; }
+    let n = 0, cancelled = false, live = false;
+    for (const nm of names()) { const e = ent(nm); n += e.tasks.filter((t) => t.active && !t.done).length; if (e.cancel) cancelled = true; if (e.live) live = true; }
     const b = fab.querySelector('.cf-badge');
-    if (b) { b.textContent = cancelled ? '🚫' : (n || ''); b.style.display = cancelled || n ? 'flex' : 'none'; }
+    if (b) { b.textContent = cancelled ? '🚫' : live ? '🔴' : (n || ''); b.style.display = cancelled || live || n ? 'flex' : 'none'; }
   }
   function applyOpacity() { document.documentElement.style.setProperty('--cfp-op', String(S().opacity)); }
   function placePhone() {
@@ -664,7 +808,13 @@
       case 'drop': if (e) dropTask(who, e, id); commit(); break;
       case 'done': if (e) completeTask(who, e, id); commit(); break;
       case 'del': if (e) e.tasks = e.tasks.filter((t) => t.id !== id); commit(); break;
-      case 'newtask': if (e) await busy(() => genTask(who)); break;
+      case 'cplace': ui.cPlace = v; renderPhone(); break;
+      case 'cformat': ui.cFormat = v; renderPhone(); break;
+      case 'contentgo': if (e) { applyContent(who, e, { format: ui.cFormat, place: ui.cPlace, action: ui.cFormat === 'stream' ? 'start' : 'single', quality: 3, force: true }); commit(); } break;
+      case 'contentstop': if (e && e.live) { endLive(who, e, 3); commit(); } break;
+      case 'pickplace': ui.pickPlace = v; renderPhone(); break;
+      case 'pickformat': ui.pickFormat = v; renderPhone(); break;
+      case 'newtask': if (e) await busy(() => genTask(who, { place: ui.pickPlace, format: ui.pickFormat })); break;
       case 'addform': ui.form = !ui.form; renderPhone(); break;
       case 'submitform': {
         const q = (i) => document.getElementById(i)?.value ?? '';
@@ -672,6 +822,7 @@
         if (!title) { toastr.warning('Введите название задания', 'Career & Fame'); break; }
         const nt = { id: uid(), type: 'task', src: 'manual', title, desc: q('cff_desc').trim(), steps: [],
           xp: clamp(parseInt(q('cff_xp')) || 25, 0, 200), fame: clamp(parseInt(q('cff_fame')) || 0, 0, 200), done: false, active: false, progress: 0 };
+        if (hasPlaces(e)) { nt.place = PLACES[q('cff_place')] ? q('cff_place') : 'home'; nt.format = FORMATS[q('cff_format')] ? q('cff_format') : 'video'; nt.reqs = reqsFor(nt.place, nt.format); }
         e.tasks.push(nt);
         ui.form = false; ui.tab = 'avail'; commit();
         genStepsFor(who, nt.id).catch((err) => console.warn('[Career&Fame] шаги по умолчанию:', err.message)).finally(commit);
@@ -772,7 +923,7 @@
   }
 
   /* =====================  СОБЫТИЯ  ===================== */
-  if (globalThis.__CF_TEST__) globalThis.__CF_TEST__.api = { ent, genTask, acceptTask, dropTask, completeTask, analyze, applyMove, applyCancel, tickTurn, renderPhone, onClick, ui, S, updatePrompt, uid };
+  if (globalThis.__CF_TEST__) globalThis.__CF_TEST__.api = { ent, genTask, acceptTask, dropTask, completeTask, analyze, applyMove, applyContent, endLive, applyCancel, tickTurn, renderPhone, onClick, ui, S, updatePrompt, uid };
   jQuery(() => {
     const c = ctx();
     mountUI(); updatePrompt(); renderPhone();
