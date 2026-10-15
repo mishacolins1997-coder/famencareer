@@ -1,56 +1,25 @@
-❤️ CAREER & FAME 💅
+# Career & Fame 3.0 — SillyTavern extension / расширение для SillyTavern
 
-Предоставляю вам прикольное расширение для Таверны связанное с карьерой и славой прямо как в Sims 4.👍
-В нем вы и ваш персонаж могут выбирать для себя карьеры ТЕХ САМЫХ ЗНАМЕНИТОСТЕЙ (отсылка на ред хэд саунд).
-Давайте поподробнее рассмотрим сие расширение.
+Install / Установка: copy the `career-fame` folder to `SillyTavern/public/scripts/extensions/third-party/` (or `data/<user>/extensions/`) and restart ST.
 
-ПРОФЕССИИ:
+The floating 📱 button opens the phone: Career, Tasks, Content, Events, Audience, Threats, Controversy, Settings.
+Language (RU/EN) and opacity are right in the phone's status bar.
 
-📱 блогер/🎮 стример, - ведем трансляции ИРЛ, игры, блоги.
-🎬 актёр, - снимаемся в сериалах, фильмах и рекламах.
-🎤 музыкант, - пишем музыку для людей, поём.
-🏅 спортсмен; - ну...Трамболлон...Короче, становимся гигачадами.
+## Money, brands, PR parcels / Деньги, бренды, PR-посылки (3.1)
+App 💰: inbox (brand offers & PR requests), parcels, wallet (salary, balance).
 
-УРОВНИ (внизу примеры только, у разных профессий все по другому):
+### Bridge for Phone-ST and other extensions / Мост для Phone-ST
+Events (DOM `window` CustomEvent `career-fame:<type>`, ST event bus `career_fame_<type>`, `CareerFame.onEvent(cb)`):
+`money` {who, amount, balance, memo, currency}, `offer` {who, brand, kind, pay, shady}, `offer_accepted`, `parcel` {who, brand, item, status}, `deal` {who, title, pay}.
 
-🌱 - начальный этап.
-🌿 - уже имеешь аудиторию.
-🌳 - на пути к славе.
-⭐️ - начинающая звезда.
-🌟 - огого звезда, но не Киркоров.
-👑 - МЕГА ЗВЕЗДА! ~ “Я самая пиздатая, блять. Поняли? Уебы.”
+```js
+window.addEventListener('career-fame:money', (e) => {
+  const { who, amount, balance, memo } = e.detail;
+  // top up the Phone-ST bank here
+});
+window.CareerFame.getWallet('Alice'); // { balance, currency, transactions }
+```
+Use the 🔍 diagnostics button (💰 → Wallet) to see which Phone-ST globals/metadata are visible.
 
-РАНГИ СЛАВЫ:
-
-от "Грязи в князи" до 👑"Короля";
-
-ОТМЕНЫ (внизу примеры только, у разных профессий все по другому):
-
-⚠️ скандал - можно все исправить на ранних этапах. Ну бывает сказанул лишнего, извинился. Относится к юзеру и персам.
-🚫 отмена - здесь, тут уже, наши полномочия…ну все. покрутил лутку, сделал додеп, - 10к очков в задницу репутации. Извинения, конечно..ок, но аудитория, как и другие не простят юзеру или персу этого.
-☠️ тотальная отмена - Пресс F, теряешь все навсегда и будешь на онлике и крутить казик.
-
-СТАТУСЫ ЗАДАНИЙ:
-
-📋 доступно - то что вы выбрали в ручную или ИИ вам дал.
-▶️ в работе - взяли задание и оно в стадии выполнения.
-✅ выполнено - выполнено, можно отдохнуть.
-🏆 в журнале и уведомлениях - все выполненные действия отображаются в журнале уведомлений.
-
-СПОРНЫЕ ХОДЫ (по жесткому):
-
-🔞 уход на платформу 18+ (OnlyFans и т.п.);
-🎰 реклама казино, лутбоксов и ставок;
-🕳 реклама скамеров и мошеннических проектов;
-🪙 реклама крипто-пирамид и памп-схем;
-🎁 фейковые розыгрыши и накрутка.
-
-От этого будет зависеть настроение фанатов, брендов/спонсоров и СМИ.
-ТРИ ГРУППЫ АУДИТОРИИ:
-
-👥 фанаты - подписота юзера или перса.
-💼 бренды и спонсоры - рекламодатели и прочие агентства.
-📰 публика и СМИ - желтуха и ящик.
-САМОЕ ГЛАВНОЕ ..... Это настройки.
-
-⚙️ Настройки: все переключатели, выбор модели, кнопки анализа и сброса.
+### 3.2: auto-connect to the Phone-ST bank / автоподключение к банку Phone-ST
+The extension imports Phone-ST's already-loaded modules (`state.js`, `bank.js`, `social.js`, `shop.js`), looks for an object with a `balance` under a `bank/wallet/account` path, credits it and copies the shape of an existing transaction. Test: 💰 → Wallet → "🧪 Test". If it fails, press "🔍 Diagnostics" and send the text.

@@ -11,7 +11,7 @@
     endpointUrl: 'http://localhost:4000/v1', endpointKey: '', endpointModel: '',
     haters: true, doxx: true, stalkers: true, stalkerPlate: true, stalkerFreq: 'normal',
     cuckTag: true, cuckTarget: 'self', cancelChance: {}, exposeScale: 100,
-    currency: '₽', salaryEvery: 25, brandOffers: true, offerFreq: 'normal', bridgeEvents: true, bridgePrompt: true,
+    currency: '₽', salaryEvery: 25, brandOffers: true, offerFreq: 'normal', bridgeEvents: true, bridgePrompt: true, phoneAuto: true, banners: true,
   };
   function S() {
     const { extensionSettings } = ctx();
@@ -423,10 +423,136 @@
 
   /* ---- Деньги, бренды, PR-посылки и мост к Phone-ST ---- */
   const bridgeLog = [], bridgeListeners = [];
+  /* ---- Подключение к Phone-ST: поиск банка в его модулях (эвристика) ---- */
+  const PS = { base: null, mods: {}, errors: {}, last: '' };
+  const importer = (u) => (globalThis.__CF_IMPORT__ ? globalThis.__CF_IMPORT__(u) : import(u));
+  async function findPhoneBase() {
+    if (PS.base) return PS.base;
+    try {
+      const hit = Array.from(document.querySelectorAll('script[src]')).map((x) => x.src).find((u) => /third-party\/[^/]*phone[^/]*\/index\.js/i.test(u) && !/career/i.test(u));
+      if (hit) return (PS.base = hit.slice(0, hit.lastIndexOf('/') + 1));
+    } catch (_) { /* ignore */ }
+    try {
+      const r = await fetch('/api/extensions/discover', { headers: (ctx().getRequestHeaders && ctx().getRequestHeaders()) || {} });
+      if (r.ok) { const x = (await r.json()).find((i) => /phone/i.test(i.name) && !/career/i.test(i.name)); if (x) return (PS.base = `${location.origin}/scripts/extensions/${String(x.name).replace(/^\//, '')}/`); }
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+  async function loadPhoneMods() {
+    const base = await findPhoneBase(); if (!base) return null;
+    for (const f of ['state', 'bank', 'social', 'shop']) {   // только вспомогательные модули — они уже загружены самим Phone-ST
+      if (PS.mods[f] !== undefined) continue;
+      try { PS.mods[f] = await importer(base + f + '.js'); } catch (err) { PS.mods[f] = null; PS.errors[f] = String(err.message || err).slice(0, 100); }
+    }
+    return PS.mods;
+  }
+  const numLike = (x) => typeof x === 'number' || (typeof x === 'string' && /^-?[\d\s.,]+$/.test(x.trim()) && x.trim() !== '');
+  function scanBank(root, path, out, depth, seen) {
+    if (!root || typeof root !== 'object' || depth > 4 || seen.has(root)) return;
+    seen.add(root);
+    for (const k of Object.keys(root).slice(0, 80)) {
+      let v; try { v = root[k]; } catch (_) { continue; }
+      if (!v || typeof v !== 'object') continue;
+      const p = `${path}.${k}`;
+      const balKey = Object.keys(v).find((x) => /^(balance|money|cash|funds)$/i.test(x) && numLike(v[x]));
+      if (balKey && /bank|wallet|account|card|finance|money/i.test(p)) out.push({ ref: v, path: p, balKey });
+      scanBank(v, p, out, depth + 1, seen);
+    }
+  }
+  function findBankCandidates() {
+    const out = [], seen = new WeakSet();
+    for (const [f, m] of Object.entries(PS.mods)) {
+      if (!m) continue;
+      for (const [k, v] of Object.entries(m)) {
+        if (v && typeof v === 'object') scanBank({ [k]: v }, f, out, 0, seen);
+        else if (typeof v === 'function' && v.length === 0 && /state|data|store|get/i.test(k)) { try { const r = v(); if (r && typeof r === 'object') scanBank({ [k]: r }, f, out, 0, seen); } catch (_) { /* ignore */ } }
+      }
+    }
+    try { scanBank(ctx().chatMetadata, 'chatMetadata', out, 0, seen); } catch (_) { /* ignore */ }
+    try { const ex = { ...ctx().extensionSettings }; delete ex[MODULE]; scanBank(ex, 'extensionSettings', out, 0, seen); } catch (_) { /* ignore */ }
+    const score = (b) => (/bank/i.test(b.path) ? 2 : 0) + (Object.values(b.ref).some(Array.isArray) ? 1 : 0);
+    return out.sort((a, b) => score(b) - score(a));
+  }
+  function makeTx(sample, arr, amount, memo) {
+    const num = (v) => parseFloat(String(v).replace(/\s/g, '').replace(',', '.'));
+    const id = 'cf' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const nowIso = new Date().toISOString();
+    if (!sample || typeof sample !== 'object') return { id, type: 'income', amount, title: memo, text: memo, date: nowIso, timestamp: Date.now() };
+    const amountKey = Object.keys(sample).find((k) => /amount|sum|value|total|price/i.test(k) && numLike(sample[k]));
+    const signed = amountKey ? arr.some((t) => numLike(t[amountKey]) && num(t[amountKey]) < 0) : false;
+    const typeKey = Object.keys(sample).find((k) => /^(type|kind|direction|dir)$/i.test(k) && typeof sample[k] === 'string');
+    const tx = {}; let memoUsed = false;
+    for (const [k, v] of Object.entries(sample)) {
+      if (/^(id|uid)$/i.test(k)) tx[k] = typeof v === 'number' ? Date.now() : id;
+      else if (k === amountKey) { const a = signed ? amount : Math.abs(amount); tx[k] = typeof v === 'number' ? a : String(a); }
+      else if (k === typeKey) {
+        const vals = [...new Set(arr.map((t) => t[typeKey]).filter((x) => typeof x === 'string'))];
+        const want = amount >= 0 ? /^(in|income|deposit|credit|receive|received|plus|\+|incoming|доход|пополнение)$/i : /^(out|expense|debit|pay|payment|spend|minus|-|outgoing|расход|списание)$/i;
+        tx[k] = vals.find((x) => want.test(x)) || (amount >= 0 ? 'income' : 'expense');
+      } else if (/date|time|^ts$|^at$|created|timestamp/i.test(k)) {
+        tx[k] = typeof v === 'number' ? (v < 1e12 ? Math.floor(Date.now() / 1000) : Date.now()) : (/^\d{4}-\d\d-\d\dT/.test(String(v)) ? nowIso : new Date().toLocaleString());
+      } else if (!memoUsed && typeof v === 'string' && /title|desc|memo|text|name|note|merchant|from|source|label|comment|reason/i.test(k)) { tx[k] = memo; memoUsed = true; }
+      else tx[k] = v;
+    }
+    return tx;
+  }
+  async function phoneStDeposit(amount, memo) {
+    await loadPhoneMods();
+    const c = findBankCandidates();
+    if (!c.length) throw new Error(tr('банк Phone-ST не найден (нужна диагностика)', 'Phone-ST bank not found (run diagnostics)'));
+    const b = c[0];
+    const cur = parseFloat(String(b.ref[b.balKey]).replace(/\s/g, '').replace(',', '.'));
+    const next = Math.round((cur + amount) * 100) / 100;
+    b.ref[b.balKey] = typeof b.ref[b.balKey] === 'string' ? String(next) : next;
+    const txKey = Object.keys(b.ref).find((k) => Array.isArray(b.ref[k]) && /trans|hist|tx|oper|log|record|statement|list/i.test(k));
+    if (txKey) {
+      const arr = b.ref[txKey]; const tx = makeTx(arr[0], arr, amount, memo);
+      let newestFirst = true;                       // по умолчанию новые операции — сверху
+      const dk = arr.length > 1 && Object.keys(arr[0] || {}).find((k) => /date|time|^ts$|^at$|created|timestamp/i.test(k));
+      if (dk) { const t = (x) => (typeof x === 'number' ? x : Date.parse(x)); const a = t(arr[0][dk]), z = t(arr[arr.length - 1][dk]); if (!isNaN(a) && !isNaN(z) && a < z) newestFirst = false; }
+      if (newestFirst) arr.unshift(tx); else arr.push(tx);
+    }
+    for (const m of Object.values(PS.mods)) { if (!m) continue; for (const [k, v] of Object.entries(m)) if (typeof v === 'function' && v.length === 0 && /^(save|persist|commit|store|write)/i.test(k)) { try { v(); } catch (_) { /* ignore */ } } }
+    try { ctx().saveMetadata(); } catch (_) { /* ignore */ }
+    return { path: b.path, from: cur, to: next, tx: !!txKey };
+  }
+  function showBanner(d) {
+    try {
+      let box = document.getElementById('cf_banners');
+      if (!box) { box = document.createElement('div'); box.id = 'cf_banners'; document.body.appendChild(box); }
+      const el = document.createElement('div'); el.className = 'cf-banner'; el.textContent = d.text; box.appendChild(el);
+      setTimeout(() => el.remove(), 6500);
+    } catch (_) { /* ignore */ }
+  }
+  async function diagnoseFull() {
+    const out = [diagnose()];
+    try {
+      const mods = await loadPhoneMods();
+      out.push('Phone-ST base: ' + (PS.base || 'NOT FOUND'));
+      for (const [f, m] of Object.entries(mods || {})) {
+        if (!m) { out.push(`-- ${f}.js: not loaded (${PS.errors[f] || ''})`); continue; }
+        out.push(`-- ${f}.js exports:`);
+        for (const [k, v] of Object.entries(m).slice(0, 60)) {
+          if (typeof v === 'function') out.push(`  fn ${k}(${v.length}): ${v.toString().replace(/\s+/g, ' ').slice(0, 110)}`);
+          else if (v && typeof v === 'object') out.push(`  obj ${k}: keys ${Object.keys(v).slice(0, 25).join(',')}`);
+          else out.push(`  ${typeof v} ${k}`);
+        }
+      }
+      const c = findBankCandidates();
+      out.push(c.length ? c.slice(0, 3).map((b) => `BANK candidate: ${b.path} (${b.balKey}=${b.ref[b.balKey]}) keys: ${Object.keys(b.ref).join(',')} sample tx: ${JSON.stringify((Object.values(b.ref).find(Array.isArray) || [])[0] ?? null).slice(0, 300)}`).join('\n') : 'BANK candidate: none');
+    } catch (err) { out.push('error: ' + err.message); }
+    return out.join('\n').slice(0, 9000);
+  }
+
   function bridgeEmit(type, detail) {
     const s = S(); const d = { type, ts: Date.now(), ...detail };
     bridgeLog.unshift(d); if (bridgeLog.length > 30) bridgeLog.length = 30;
     if (d.who && s.bridgePrompt) { const e = ent(d.who); e.notices.unshift({ text: d.text || type, left: 5 }); e.notices = e.notices.slice(0, 5); }
+    if (s.banners && d.text && ['money', 'offer', 'offer_accepted', 'parcel', 'deal'].includes(type)) showBanner(d);
+    if (type === 'money' && s.phoneAuto && d.who === ctx().name1) {
+      phoneStDeposit(d.amount, d.memo).then((r) => { PS.last = `✅ ${r.path}: ${r.from} → ${r.to}${r.tx ? '' : ' (' + tr('без записи в историю', 'no history entry') + ')'}`; })
+        .catch((err) => { PS.last = '⚠️ ' + err.message; console.warn('[Career&Fame] Phone-ST:', err.message); });
+    }
     if (!s.bridgeEvents) return;
     try { if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') window.dispatchEvent(new CustomEvent('career-fame:' + type, { detail: d })); } catch (_) { /* ignore */ }
     try { ctx().eventSource.emit('career_fame_' + type, d); } catch (_) { /* ignore */ }
@@ -999,9 +1125,10 @@
       <div class="cfp-tb">${btn('salary', tr('💵 Получить выплату сейчас', '💵 Get a payout now'), '', 'pri')}${btn('balance', tr('± Баланс', '± Balance'))}</div></div>
       <div class="cfp-card"><div class="cfp-h">${tr('Операции', 'Transactions')}</div>${tx}</div>
       <div class="cfp-card"><div class="cfp-h">🔌 Phone-ST</div>
-        <div class="cfp-sub">${tr('Деньги, предложения и посылки отправляются событиями career-fame:money / offer / parcel / deal. Если банк Phone-ST не пополняется, нажмите диагностику и пришлите результат — по нему я допишу точное подключение.', 'Money, offers and parcels are sent as career-fame:money / offer / parcel / deal events. If the Phone-ST bank is not topped up, run the diagnostics and send me the result — I will finish the exact connection from it.')}</div>
+        <div class="cfp-sub">${tr('Деньги, предложения и посылки отправляются событиями career-fame:money / offer / parcel / deal. Расширение само ищет банк Phone-ST и записывает туда деньги. Если не получается, нажмите диагностику и пришлите результат — по нему я допишу точное подключение.', 'Money, offers and parcels are sent as career-fame:money / offer / parcel / deal events. The extension looks for the Phone-ST bank itself and writes the money there. If that fails, run the diagnostics and send me the result — I will finish the exact connection from it.')}</div>
         <div class="cfp-sub">${tr('Отправлено событий', 'Events sent')}: ${bridgeLog.length}</div>
-        <div class="cfp-tb">${btn('diag', tr('🔍 Диагностика Phone-ST', '🔍 Phone-ST diagnostics'))}</div>
+        ${PS.last ? `<div class="cfp-sub">${E(PS.last)}</div>` : ''}
+        <div class="cfp-tb">${btn('phonetest', tr('🧪 Тест: +1 в банк Phone-ST', '🧪 Test: +1 to the Phone-ST bank'), '', 'pri')}${btn('diag', tr('🔍 Диагностика', '🔍 Diagnostics'))}</div>
         ${ui.diag ? `<textarea class="cfp-in" readonly rows="9" style="font-size:10.5px">${E(ui.diag)}</textarea>` : ''}</div>`;
   }
 
@@ -1043,6 +1170,8 @@
         <div class="cfp-sub">${tr('Выплата каждые N сообщений (0 — выключено)', 'Payout every N messages (0 = off)')}</div><input class="cfp-in cfp-num" type="number" min="0" max="500" data-set="salaryEvery" value="${s.salaryEvery}">
         ${chk('brandOffers', tr('Предложения и PR-запросы от брендов', 'Brand offers and PR requests'))}
         <div class="cfp-sub">${tr('Как часто бренды пишут', 'How often brands write')}</div>${sel('offerFreq', [['rare', tr('Редко', 'Rarely')], ['normal', tr('Обычно', 'Normal')], ['often', tr('Часто', 'Often')]])}
+        ${chk('phoneAuto', tr('Автоматически зачислять деньги {{user}} в банк Phone-ST', 'Automatically credit {{user}}’s money to the Phone-ST bank'))}
+        ${chk('banners', tr('Баннеры-уведомления о деньгах и брендах', 'Banner notifications about money and brands'))}
         ${chk('bridgeEvents', tr('Отправлять события в Phone-ST и другие расширения', 'Send events to Phone-ST and other extensions'))}
         ${chk('bridgePrompt', tr('Упоминать уведомления телефона в сюжете', 'Mention phone notifications in the story'))}</div>
       <div class="cfp-card"><div class="cfp-h">${tr('Модель для анализа и заданий', 'Model for analysis and tasks')}</div>
@@ -1185,7 +1314,12 @@
       case 'unbox': case 'review': case 'sell': if (e) parcelAct(who, e, id, act); commit(); break;
       case 'salary': if (e) { paySalary(who, e); commit(); } break;
       case 'balance': { const a = parseInt(prompt(tr('Изменить баланс на (±):', 'Change balance by (±):'), '100')); if (a && e) { deposit(who, e, a, tr('Ручная корректировка', 'Manual adjustment'), 'adjust'); commit(); } break; }
-      case 'diag': ui.diag = diagnose(); console.log('[Career&Fame]\n' + ui.diag); renderPhone(); break;
+      case 'diag': ui.diag = tr('Собираю данные…', 'Collecting…'); renderPhone(); ui.diag = await diagnoseFull(); console.log('[Career&Fame]\n' + ui.diag); renderPhone(); break;
+      case 'phonetest': {
+        try { const r = await phoneStDeposit(1, 'Career & Fame test'); ui.diag = tr(`✅ Phone-ST: найден ${r.path}, баланс ${r.from} → ${r.to}${r.tx ? ', операция записана' : ', без записи в историю'}`, `✅ Phone-ST: found ${r.path}, balance ${r.from} → ${r.to}${r.tx ? ', transaction recorded' : ', no history entry'}`); }
+        catch (err) { ui.diag = `⚠️ ${err.message}\n\n` + await diagnoseFull(); }
+        renderPhone(); break;
+      }
       case 'stalkhide': if (e) { e.stalkerHidden = true; commit(); } break;
       case 'stalkshow': if (e) { e.stalkerHidden = false; commit(); } break;
       case 'stalkresolve': if (e) { e.stalker = null; e.stalkerCool = 60; e.stalkerHidden = false; e.tasks.forEach((t) => { if (t.type === 'stalker') t.done = true; }); addLog(e, tr('🛡️ Сталкер больше не беспокоит', '🛡️ The stalker no longer bothers you')); commit(); } break;
@@ -1305,7 +1439,7 @@
   // Публичный API для других расширений (например, Phone-ST)
   try {
     window.CareerFame = {
-      version: '3.1.0',
+      version: '3.2.0',
       onEvent(cb) { if (typeof cb === 'function') { bridgeListeners.push(cb); return () => { const i = bridgeListeners.indexOf(cb); if (i >= 0) bridgeListeners.splice(i, 1); }; } },
       getState(name) { return JSON.parse(JSON.stringify(ent(name || ctx().name1))); },
       getWallet(name) { const e = ent(name || ctx().name1); return { balance: e.money, currency: S().currency, transactions: JSON.parse(JSON.stringify(e.wallet)) }; },
@@ -1314,7 +1448,7 @@
       events: ['money', 'offer', 'offer_accepted', 'parcel', 'deal'],
     };
   } catch (_) { /* ignore */ }
-  if (globalThis.__CF_TEST__) globalThis.__CF_TEST__.api = { ent, genTask, acceptTask, dropTask, completeTask, analyze, applyMove, applyContent, endLive, applyCancel, tickTurn, renderPhone, onClick, onChange, ui, S, updatePrompt, uid, switchCareer, startDoxx, spawnStalker, doxxChance, setLang, chanceOf, MOVES, genOffer, acceptOffer, declineOffer, parcelAct, paySalary, deposit, diagnose, bridgeLog };
+  if (globalThis.__CF_TEST__) globalThis.__CF_TEST__.api = { ent, genTask, acceptTask, dropTask, completeTask, analyze, applyMove, applyContent, endLive, applyCancel, tickTurn, renderPhone, onClick, onChange, ui, S, updatePrompt, uid, switchCareer, startDoxx, spawnStalker, doxxChance, setLang, chanceOf, MOVES, genOffer, acceptOffer, declineOffer, parcelAct, paySalary, deposit, diagnose, bridgeLog, phoneStDeposit, diagnoseFull, PS, makeTx };
   jQuery(() => {
     const c = ctx();
     mountUI(); updatePrompt(); renderPhone();

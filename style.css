@@ -80,3 +80,6 @@
 .cfp-lang { cursor: pointer; padding: 1px 6px; border-radius: 8px; background: rgba(255,255,255,.12); font-size: 10px; }
 .cfp-pick small { display: block; opacity: .7; font-size: 10px; }
 .cfp-num { width: 90px; flex: 0 0 90px; }
+#cf_banners { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5100; display: flex; flex-direction: column; gap: 6px; width: min(92vw, 380px); pointer-events: none; }
+.cf-banner { background: rgba(20,20,28,.94); color: #fff; border: 1px solid rgba(255,255,255,.18); border-radius: 14px; padding: 9px 14px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.5); animation: cfban .25s ease-out; }
+@keyframes cfban { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: none; } }
