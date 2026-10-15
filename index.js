@@ -11,6 +11,7 @@
     endpointUrl: 'http://localhost:4000/v1', endpointKey: '', endpointModel: '',
     haters: true, doxx: true, stalkers: true, stalkerPlate: true, stalkerFreq: 'normal',
     cuckTag: true, cuckTarget: 'self', cancelChance: {}, exposeScale: 100,
+    currency: '₽', salaryEvery: 25, brandOffers: true, offerFreq: 'normal', bridgeEvents: true, bridgePrompt: true,
   };
   function S() {
     const { extensionSettings } = ctx();
@@ -128,6 +129,26 @@
   const rollPlace = () => { const r = Math.random(); return r < 0.4 ? 'home' : r < 0.8 ? 'street' : 'event'; };
   const STALK_P = { rare: 0.004, normal: 0.01, often: 0.025 };
 
+  // Бренды (вымышленные), PR-посылки, зарплата
+  const BRANDS = {
+    beauty:  ['Lumea Beauty', 'GlowLab', 'Velvet Skin'],
+    tech:    ['Voltix', 'Nexa Devices', 'PixelForge'],
+    food:    ['FreshBox', 'Crunchy Bite', 'Green Spoon'],
+    fashion: ['Urban Thread', 'Velvet Row', 'Northwind Wear'],
+    gaming:  ['Arcadia Games', 'RiftPlay', 'Neon Arena'],
+    fitness: ['FitPulse', 'IronLeaf', 'Aqua Motion'],
+  };
+  const SHADY = { casino: ['LuckySpin Casino', 'RoyalBet'], crypto: ['MoonCoin Pro', 'BlockRocket'], scam: ['QuickProfit Club', 'EasyWin Network'], guru: ['Millionaire Academy', 'Rich Mindset School'] };
+  const ITEMS = {
+    beauty:  ['набор косметики|a cosmetics set', 'парфюм|a perfume'], tech: ['наушники|headphones', 'умная колонка|a smart speaker'],
+    food:    ['бокс снеков|a snack box', 'набор специй|a spice set'], fashion: ['худи из новой коллекции|a hoodie from the new collection', 'кроссовки|sneakers'],
+    gaming:  ['игровая мышь|a gaming mouse', 'коллекционное издание игры|a collector’s edition of a game'], fitness: ['бутылка и эспандеры|a bottle and resistance bands', 'фитнес-браслет|a fitness band'],
+  };
+  const SALARY_BASE = [60, 140, 320, 700, 1500, 3200];
+  const SALARY_LABEL = { blogger: 'доход с платформ и рекламы|platform & ad income', streamer: 'доход со стримов (подписки, донаты)|stream income (subs, donations)', actor: 'гонорар|acting fee', musician: 'роялти и выступления|royalties and gigs', athlete: 'контракт и призовые|contract and prize money' };
+  const OFFER_P = { rare: 0.01, normal: 0.03, often: 0.07 };
+  const money = (n) => `${Math.round(n).toLocaleString(LANG() === 'en' ? 'en-US' : 'ru-RU')} ${S().currency}`;
+
   const xpNeeded = (lvl) => Math.round(100 * Math.pow(lvl, 1.4));
   const fameRow = (f) => [...FAME_TIERS].reverse().find(([min]) => f >= min);
   const fameTier = (f, l) => bi(fameRow(f)[2], l);
@@ -170,7 +191,7 @@
     const e = st.entities[name];
     if (e.career && !CAREERS[e.career]) { e.career = null; e.level = 1; e.xp = 0; }
     if (!e.audience) e.audience = { loyal: 50, brands: 50, public: 50 };
-    const defs = { heat: 0, moves: [], reaction: null, live: null, contentAt: {}, progress: {}, haters: 0, privacy: 30, doxxLeft: 0, stalker: null, stalkerHidden: false, stalkerCool: 0, tags: {} };
+    const defs = { heat: 0, moves: [], reaction: null, live: null, contentAt: {}, progress: {}, haters: 0, privacy: 30, doxxLeft: 0, stalker: null, stalkerHidden: false, stalkerCool: 0, tags: {}, money: 0, tickCount: 0, offers: [], parcels: [], wallet: [], notices: [] };
     for (const [k, v] of Object.entries(defs)) if (e[k] === undefined) e[k] = typeof v === 'object' && v ? JSON.parse(JSON.stringify(v)) : v;
     if (!e.stats) e.stats = { stream: 0, stories: 0, video: 0, post: 0 };
     e.tasks.forEach(normTask);
@@ -289,6 +310,12 @@
     addLog(e, tr(`🏆 Задание выполнено: ${t.title} (+${rw.xp} XP, +${rw.fame} славы)`, `🏆 Task done: ${t.title} (+${rw.xp} XP, +${rw.fame} fame)`));
     toastr.success(tr(`🏆 ${name}: «${t.title}» выполнено! +${rw.xp} XP`, `🏆 ${name}: “${t.title}” done! +${rw.xp} XP`), 'Career & Fame');
     if (t.type === 'apology') liftCancel(name, e, tr('(извинения приняты)', '(apology accepted)'));
+    if (t.type === 'deal') {
+      if (t.pay) deposit(name, e, t.pay, tr(`Реклама: ${t.title}`, `Ad payment: ${t.title}`), 'deal');
+      bridgeEmit('deal', { who: name, title: t.title, pay: t.pay || 0, text: tr(`🤝 Сделка выполнена: ${t.title}`, `🤝 Deal completed: ${t.title}`) });
+      if (!t.shady) e.audience.brands = clamp(e.audience.brands + 3, 0, 100);
+      if (t.shady && MOVES[t.shady]) applyMove(name, e, t.shady, t.title);
+    }
     if (t.type === 'safety') { e.privacy = clamp(e.privacy + 25, 0, 100); e.haters = clamp(e.haters - 15, 0, 100); e.doxxLeft = 0; }
     if (t.type === 'stalker') { e.stalker = null; e.stalkerCool = 60; addLog(e, tr('🛡️ Сталкер больше не беспокоит', '🛡️ The stalker no longer bothers you')); }
   }
@@ -394,11 +421,123 @@
     if (!e.cancel && Math.random() < p) applyCancel(name, e, eff.sev, bi(m.name));
   }
 
+  /* ---- Деньги, бренды, PR-посылки и мост к Phone-ST ---- */
+  const bridgeLog = [], bridgeListeners = [];
+  function bridgeEmit(type, detail) {
+    const s = S(); const d = { type, ts: Date.now(), ...detail };
+    bridgeLog.unshift(d); if (bridgeLog.length > 30) bridgeLog.length = 30;
+    if (d.who && s.bridgePrompt) { const e = ent(d.who); e.notices.unshift({ text: d.text || type, left: 5 }); e.notices = e.notices.slice(0, 5); }
+    if (!s.bridgeEvents) return;
+    try { if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') window.dispatchEvent(new CustomEvent('career-fame:' + type, { detail: d })); } catch (_) { /* ignore */ }
+    try { ctx().eventSource.emit('career_fame_' + type, d); } catch (_) { /* ignore */ }
+    for (const cb of bridgeListeners) { try { cb(d); } catch (err) { console.warn('[Career&Fame] bridge listener', err); } }
+    try { const h = window.CareerFameBridge; if (h && typeof h.onEvent === 'function') h.onEvent(d); } catch (_) { /* ignore */ }
+  }
+  function deposit(name, e, amount, memo, kind) {
+    amount = Math.round(amount); if (!amount) return;
+    e.money += amount;
+    e.wallet.unshift({ kind: kind || (amount > 0 ? 'income' : 'expense'), amount, memo: memo || '', at: ctx().chat?.length || 0 }); e.wallet = e.wallet.slice(0, 40);
+    const sg = `${amount > 0 ? '+' : ''}${money(amount)}`;
+    addLog(e, `💰 ${sg} — ${memo || ''}`);
+    toastr.success(`💰 ${name}: ${sg} (${memo || ''})`, 'Career & Fame');
+    bridgeEmit('money', { who: name, amount, balance: e.money, memo: memo || '', currency: S().currency, text: tr(`💰 Банк: ${sg} — ${memo || ''}`, `💰 Bank: ${sg} — ${memo || ''}`) });
+  }
+  function paySalary(name, e) {
+    if (!e.career) return;
+    const amount = Math.round(SALARY_BASE[clamp(e.level, 1, 6) - 1] * (1 + e.fame / 1500) * (e.cancel ? 0.4 : 1) * (0.9 + Math.random() * 0.2));
+    deposit(name, e, amount, bi(SALARY_LABEL[e.career]), 'salary');
+  }
+  const offersLine = (e) => e.offers.filter((o) => o.status === 'new').map((o) => `[${o.id}] ${o.brand} (${o.kind === 'pr' ? 'PR package' : `ad ${bi(FORMATS[o.format].n, 'en')}, pay ${o.pay}`}${o.shady ? ', SHADY' : ''})`).join('; ') || 'none';
+  function genOffer(name, e) {
+    const shady = Math.random() < 0.12 + (e.audience.brands < 35 ? 0.25 : 0) + (e.cancel ? 0.2 : 0) ? pickRnd(Object.keys(SHADY)) : null;
+    const cat = shady || pickRnd(Object.keys(BRANDS));
+    const brand = shady ? pickRnd(SHADY[shady]) : pickRnd(BRANDS[cat]);
+    const kind = !shady && Math.random() < 0.45 ? 'pr' : 'ad';
+    const format = pickRnd(Object.keys(FORMATS));
+    const lvl = 1 + (e.level - 1) * 0.6;
+    const o = { id: uid(), brand, cat, kind, shady, format, place: kind === 'ad' && hasPlaces(e) ? pickRnd(Object.keys(PLACES)) : undefined,
+      pay: kind === 'pr' ? 0 : Math.round((80 + Math.random() * 170) * lvl * (1 + e.fame / 300) * (shady ? 2.5 : 1)), item: shady ? null : pickRnd(ITEMS[cat]), left: 25, status: 'new' };
+    e.offers.unshift(o); e.offers = e.offers.slice(0, 14);
+    const txt = kind === 'pr'
+      ? tr(`📦 ${brand} просит разрешения отправить вам PR-посылку (${bi(o.item)})`, `📦 ${brand} asks to send you a PR package (${bi(o.item)})`)
+      : tr(`🤝 ${brand} предлагает рекламу: ${fLabel(format)}, оплата ${money(o.pay)}`, `🤝 ${brand} offers an ad deal: ${fLabel(format)}, pay ${money(o.pay)}`);
+    addLog(e, txt); toastr.info(`${name}: ${txt}`, 'Career & Fame');
+    bridgeEmit('offer', { who: name, offerId: o.id, brand, kind, pay: o.pay, shady, text: txt });
+  }
+  function acceptOffer(name, e, id) {
+    const o = e.offers.find((x) => x.id === id && x.status === 'new'); if (!o) return false;
+    o.status = 'accepted';
+    if (o.kind === 'pr') {
+      e.parcels.unshift({ id: uid(), brand: o.brand, cat: o.cat, item: o.item, value: 40 + Math.round(Math.random() * 160), left: 2 + Math.floor(Math.random() * 3), status: 'transit' });
+      addLog(e, tr(`📦 Согласие: ${o.brand} отправляет посылку`, `📦 Agreed: ${o.brand} is shipping a package`));
+    } else {
+      const f = o.format, t = { id: uid(), type: 'deal', src: 'brand', career: e.career, offerId: o.id, shady: o.shady, pay: o.pay,
+        title: tr(`Реклама: ${o.brand}`, `Ad deal: ${o.brand}`), desc: tr(`Сделать рекламу для ${o.brand} (${fLabel(f)}) и опубликовать`, `Make an ad for ${o.brand} (${fLabel(f)}) and publish it`),
+        steps: [tr('Изучить бриф бренда', 'Read the brand brief'), tr(`Снять контент: ${bi(FORMATS[f].n)}`, `Create the content: ${bi(FORMATS[f].n)}`), tr('Опубликовать с упоминанием бренда', 'Publish with a brand mention'), tr('Отправить отчёт бренду', 'Send the report to the brand')],
+        xp: 20, fame: 10, done: false, active: false, progress: 0 };
+      if (o.place) { t.place = o.place; t.format = f; t.reqs = reqsFor(o.place, f); }
+      e.tasks.push(t);
+      addLog(e, tr(`🤝 Принято предложение: ${o.brand} (${money(o.pay)}). Задание добавлено`, `🤝 Offer accepted: ${o.brand} (${money(o.pay)}). Task added`));
+    }
+    bridgeEmit('offer_accepted', { who: name, offerId: o.id, brand: o.brand, text: tr(`✅ Вы приняли предложение ${o.brand}`, `✅ You accepted ${o.brand}'s offer`) });
+    return true;
+  }
+  function declineOffer(name, e, id) {
+    const o = e.offers.find((x) => x.id === id && x.status === 'new'); if (!o) return;
+    o.status = 'declined';
+    if (o.shady) e.audience.loyal = clamp(e.audience.loyal + 1, 0, 100);
+    addLog(e, tr(`✖ Отказ: ${o.brand}`, `✖ Declined: ${o.brand}`));
+  }
+  function parcelAct(name, e, id, act) {
+    const p = e.parcels.find((x) => x.id === id); if (!p) return;
+    if (act === 'unbox' && p.status === 'arrived') { p.status = 'opened'; e.audience.brands = clamp(e.audience.brands + 1, 0, 100); addLog(e, tr(`📦 Распаковано: ${bi(p.item)} от ${p.brand}`, `📦 Unboxed: ${bi(p.item)} from ${p.brand}`)); }
+    else if (act === 'review' && (p.status === 'arrived' || p.status === 'opened')) {
+      p.status = 'reviewed'; e.audience.brands = clamp(e.audience.brands + 3, 0, 100); gainFame(e, 5);
+      applyContent(name, e, { format: 'video', place: 'home', action: 'single', quality: 4, note: tr(`распаковка и обзор ${p.brand}`, `${p.brand} unboxing & review`), force: true });
+    } else if (act === 'sell' && (p.status === 'arrived' || p.status === 'opened')) { p.status = 'sold'; deposit(name, e, Math.round(p.value * 0.4), tr(`Продажа подарка ${p.brand}`, `Sold the ${p.brand} gift`), 'sale'); }
+  }
+  function tickMoney(n, e) {
+    const s = S(); let changed = false;
+    e.tickCount++;
+    if (s.salaryEvery > 0 && e.career && e.tickCount % s.salaryEvery === 0) { paySalary(n, e); changed = true; }
+    for (const o of e.offers) if (o.status === 'new') { o.left--; if (o.left <= 0) { o.status = 'expired'; changed = true; } }
+    for (const p of e.parcels) if (p.status === 'transit') {
+      p.left--; changed = true;
+      if (p.left <= 0) {
+        p.status = 'arrived';
+        const txt = tr(`📦 Посылка от ${p.brand} прибыла (${bi(p.item)})`, `📦 A package from ${p.brand} arrived (${bi(p.item)})`);
+        addLog(e, txt); toastr.info(`${n}: ${txt}`, 'Career & Fame'); bridgeEmit('parcel', { who: n, parcelId: p.id, brand: p.brand, item: bi(p.item), status: 'arrived', text: txt });
+      }
+    }
+    if (e.notices.length) { e.notices.forEach((x) => x.left--); e.notices = e.notices.filter((x) => x.left > 0); }
+    const fresh = e.offers.filter((o) => o.status === 'new').length;
+    if (s.brandOffers && e.career && e.fame >= 40 && fresh < 4 &&
+      Math.random() < OFFER_P[s.offerFreq || 'normal'] * (0.5 + e.fame / 500) * (0.5 + e.audience.brands / 100) * (e.cancel ? 0.3 : 1)) { genOffer(n, e); changed = true; }
+    return changed;
+  }
+  // Диагностика: показывает, что видно из окружения (для подключения к Phone-ST)
+  function diagnose() {
+    const out = ['Career & Fame bridge diagnostics'];
+    try { out.push('extensionSettings keys (phone/bank/money): ' + (Object.keys(ctx().extensionSettings || {}).filter((k) => /phone|bank|money|tel/i.test(k)).join(', ') || '-')); } catch (_) {}
+    try {
+      for (const k of Object.keys(window).filter((x) => /phone|bank|pst/i.test(x) && x !== 'CareerFame').slice(0, 12)) {
+        let d = typeof window[k]; try { if (window[k] && d === 'object') d += ` keys: ${Object.keys(window[k]).slice(0, 30).join(',')}`; } catch (_) {}
+        out.push(`window.${k}: ${d}`);
+      }
+    } catch (_) {}
+    try { out.push('chatMetadata keys: ' + Object.keys(ctx().chatMetadata || {}).join(', ')); } catch (_) {}
+    try { out.push('DOM (phone): ' + Array.from(document.querySelectorAll('[id*="phone" i]')).slice(0, 8).map((x) => '#' + x.id).join(' ')); } catch (_) {}
+    try { out.push('scripts (phone): ' + Array.from(document.scripts).map((x) => x.src).filter((u) => /phone/i.test(u)).join(' | ')); } catch (_) {}
+    out.push(`events sent by Career&Fame: ${bridgeLog.length}${bridgeLog[0] ? ` (last: ${bridgeLog[0].type})` : ''}`);
+    return out.join('\n');
+  }
+
   function tickTurn() {
     const s = S(); let changed = false;
     for (const n of names()) {
       const e = ent(n);
       if (e.cancel) { e.cancel.left--; changed = true; if (e.cancel.left <= 0) liftCancel(n, e, tr('(публика забыла)', '(the public moved on)')); }
+      if (tickMoney(n, e)) changed = true;
       if (e.live) { e.live.ticks++; e.live.viewers = computeViewers(e, e.live.place); changed = true; if (e.live.ticks >= 30) endLive(n, e, 3, true); }
       if (e.reaction) { e.reaction.left--; changed = true; if (e.reaction.left <= 0) e.reaction = null; }
       for (const k of Object.keys(SEG)) { const v = e.audience[k]; if (v < 50) { e.audience[k]++; changed = true; } else if (v > 50) { e.audience[k]--; changed = true; } }
@@ -516,7 +655,7 @@
       const e = ent(n);
       const open = e.tasks.filter((t) => !t.done)
         .map((t) => `[${t.id}] "${t.title}" (${t.active ? 'TAKEN' : 'not taken'}${placeInfo(t)}; steps: ${t.steps.map((x, i) => `${i + 1}.${x.done ? '[x]' : '[ ]'} ${x.text}`).join(' ')})`).join('; ') || 'none';
-      return `- ${n}: ${titleOf(e)}, lvl ${e.level}, fame ${e.fame} (${fameTier(e.fame, 'en')}), ${e.cancel ? 'CANCELLED (' + e.cancel.reason + ')' : 'fine'}; audience: fans ${mood(e.audience.loyal, 'en')}, brands ${mood(e.audience.brands, 'en')}, public ${mood(e.audience.public, 'en')}; haters ${e.haters}/100${e.doxxLeft > 0 ? ', DOXXED NOW' : ''}${e.stalker ? ', has a stalker' : ''}; recent controversial moves: ${e.moves.slice(0, 3).map((x) => bi(MOVES[x.type]?.name || x.type, 'en')).join(', ') || 'none'}; ${e.live ? `LIVE STREAM NOW (${bi(PLACES[e.live.place].name, 'en')}, ${e.live.ticks} msgs); ` : ''}tasks: ${open}`;
+      return `- ${n}: ${titleOf(e)}, lvl ${e.level}, fame ${e.fame} (${fameTier(e.fame, 'en')}), ${e.cancel ? 'CANCELLED (' + e.cancel.reason + ')' : 'fine'}; audience: fans ${mood(e.audience.loyal, 'en')}, brands ${mood(e.audience.brands, 'en')}, public ${mood(e.audience.public, 'en')}; haters ${e.haters}/100${e.doxxLeft > 0 ? ', DOXXED NOW' : ''}${e.stalker ? ', has a stalker' : ''}; recent controversial moves: ${e.moves.slice(0, 3).map((x) => bi(MOVES[x.type]?.name || x.type, 'en')).join(', ') || 'none'}; ${e.live ? `LIVE STREAM NOW (${bi(PLACES[e.live.place].name, 'en')}, ${e.live.ticks} msgs); ` : ''}tasks: ${open}; pending brand offers: ${offersLine(e)}`;
     }).join('\n');
   }
 
@@ -535,7 +674,7 @@
       `"controversy":null or {"type":"adult|casino|scam|crypto|fake|guru","note":"short"},` +
       `"content":null or {"format":"stream|stories|video|post","place":"home|street|event","action":"start|end|single","quality":1-5,"note":"short"},` +
       `"haters":null or {"delta":-20..30,"doxx":false,"note":"short"},` +
-      `"stalker":null or {"action":"appear|escalate|resolve","note":"short"},"lift_cancel":false}]}\n` +
+      `"stalker":null or {"action":"appear|escalate|resolve","note":"short"},"brand":null or {"id":"offer id from the list","action":"accept|decline"},"lift_cancel":false}]}\n` +
       `RULES. TASKS: in steps_done list only steps the character/user has ALREADY ACTUALLY COMPLETED in the messages (not "going to", not planning); do not repeat steps marked [x]; this also works for "not taken" tasks if the hero started them on their own. ` +
       `Mark the last step only when the hero really finished and left the place/scene (e.g. arrived at the shoot -> filmed -> finished and left). The task completes automatically when all steps are marked and the reward is given automatically, so xp/fame in the event are only for OTHER things. ` +
       `If a task has a PLACE (home / outdoors / event), steps count only when the actions happen there and the conditions are respected; violating the conditions (filming people without consent, streaming at an event without permission) is a reason for a severity-1 cancel. ` +
@@ -543,7 +682,7 @@
       `CONTROVERSY only when the character REALLY did or announced it: adult = moving to an 18+ platform like OnlyFans; casino = advertising casinos/lootboxes/betting; scam = advertising scammers/fraudulent projects; crypto = advertising crypto pyramids/pump schemes; fake = fake giveaways/botting; guru = selling overpriced courses/marathons with unrealistic income promises (info-gypsy). Not talk, threats or refusals; do not repeat recent moves. ` +
       `CONTENT = SELF-INITIATED content outside tasks: stream -> action "start" when they go live and "end" when they finish (while it continues -> null); stories/video/post -> action "single", once per publication; place = where it happens; quality 1-5 = how well it is shown in the text. Not plans or talk; if the actions are steps of an active task use tasks, not content. Place conditions apply here too. ` +
       `HATERS only when the text shows harassment/hate campaigns (delta > 0) or calming down (delta < 0); set doxx true ONLY if personal data was actually leaked in the story. STALKER: appear = an obsessive follower shows up; escalate = gets worse; resolve = dealt with. ` +
-      `If a character is a minor, always return null for controversy, content, haters and stalker. ${outLang()}`;
+      `BRAND only if the story shows the hero actually answering one of the pending brand offers. If a character is a minor, always return null for controversy, content, haters and stalker. ${outLang()}`;
     let data;
     try { data = await askJson(system, user, 1000); }
     catch (err) { if (manual) throw err; console.warn('[Career&Fame] auto-analysis skipped:', err.message); return; }
@@ -569,6 +708,7 @@
       gainXp(ev.who, e, clamp(parseInt(ev.xp) || 0, -30, 40));
       gainFame(e, clamp(parseInt(ev.fame) || 0, -50, 80));
       if (ev.content) applyContent(ev.who, e, ev.content);
+      if (ev.brand?.id) { if (ev.brand.action === 'accept') acceptOffer(ev.who, e, ev.brand.id); else if (ev.brand.action === 'decline') declineOffer(ev.who, e, ev.brand.id); }
       const cv = ev.controversy;
       if (cv?.type && MOVES[cv.type] && !e.moves.some((x) => x.type === cv.type && c.chat.length - x.at < 6)) applyMove(ev.who, e, cv.type, cv.note);
       if (ev.haters && s.haters) { addHate(e, clamp(parseInt(ev.haters.delta) || 0, -20, 30)); if (ev.haters.doxx) startDoxx(ev.who, e); if (ev.haters.note) addLog(e, `😡 ${ev.haters.note}`); }
@@ -643,6 +783,7 @@
       if (s.doxx && e.doxxLeft > 0) l += tr(`\n  Личные данные ${n} утекли в сеть (доксинг): тревога, навязчивые сообщения, поддержка фанатов и платформ. Показывай последствия и пути защиты, без подробностей о том, как именно данные раскрывают.`, `\n  ${n}'s personal data leaked online (doxxing): anxiety, intrusive messages, support from fans and platforms. Show the consequences and ways to protect oneself, without details on how data gets exposed.`);
       else if (s.doxx && s.haters && doxxChance(e) >= 50) l += tr(` Риск доксинга высокий (${doxxChance(e)}%).`, ` Doxxing risk is high (${doxxChance(e)}%).`);
       if (stalkerVisible(e)) l += tr(`\n  За ${n} присматривает навязчивый поклонник (уровень ${Math.round(e.stalker.level)}/100): странные сообщения, «случайные» встречи. Упоминай это редко и ненавязчиво — не чаще раза в несколько постов.`, `\n  An obsessive fan watches ${n} (level ${Math.round(e.stalker.level)}/100): odd messages, “random” encounters. Mention it rarely and subtly — no more than once every few posts.`);
+      if (s.bridgePrompt && e.notices.length) l += tr(`\n  Недавние уведомления на телефоне ${n}: ${e.notices.map((x) => x.text).join(' | ')}. Если уместно, покажи их как уведомления или сообщения на экране телефона.`, `\n  Recent phone notifications for ${n}: ${e.notices.map((x) => x.text).join(' | ')}. If appropriate, show them as notifications or messages on the phone screen.`);
       if (e.tags.cuck) {
         const from = e.tags.cuck.from;
         l += from !== n
@@ -672,7 +813,7 @@
   }
 
   /* =====================  ТЕЛЕФОН (UI)  ===================== */
-  const ui = { open: false, screen: 'home', who: null, tab: 'avail', form: false, busy: false, models: [], pickPlace: 'rand', pickFormat: 'rand', cPlace: 'home', cFormat: 'stream' };
+  const ui = { open: false, screen: 'home', who: null, tab: 'avail', form: false, busy: false, models: [], pickPlace: 'rand', pickFormat: 'rand', cPlace: 'home', cFormat: 'stream', mtab: 'inbox', diag: '' };
   const APPS = [
     { id: 'career',   icon: '💼', name: 'Карьера|Career',       bg: 'linear-gradient(135deg,#4facfe,#2563eb)' },
     { id: 'tasks',    icon: '🎯', name: 'Задания|Tasks',        bg: 'linear-gradient(135deg,#43e97b,#0d9f6e)' },
@@ -681,10 +822,11 @@
     { id: 'aud',      icon: '👥', name: 'Аудитория|Audience',   bg: 'linear-gradient(135deg,#c084fc,#7c3aed)' },
     { id: 'threats',  icon: '🛡️', name: 'Угрозы|Threats',       bg: 'linear-gradient(135deg,#f87171,#b91c1c)' },
     { id: 'moves',    icon: '🎭', name: 'Спорное|Controversy',  bg: 'linear-gradient(135deg,#fb7185,#e11d48)' },
+    { id: 'money',    icon: '💰', name: 'Деньги и бренды|Money & brands', bg: 'linear-gradient(135deg,#34d399,#059669)' },
     { id: 'settings', icon: '⚙️', name: 'Настройки|Settings',   bg: 'linear-gradient(135deg,#94a3b8,#475569)' },
   ];
   const TITLES = { home: 'Career & Fame', career: '💼 Карьера|💼 Career', tasks: '🎯 Задания|🎯 Tasks', content: '📡 Контент|📡 Content', feed: '📰 События|📰 Events', aud: '👥 Аудитория|👥 Audience',
-    threats: '🛡️ Угрозы и ярлыки|🛡️ Threats & labels', moves: '🎭 Спорные ходы|🎭 Controversial moves', settings: '⚙️ Настройки|⚙️ Settings' };
+    threats: '🛡️ Угрозы и ярлыки|🛡️ Threats & labels', moves: '🎭 Спорные ходы|🎭 Controversial moves', money: '💰 Деньги и бренды|💰 Money & brands', settings: '⚙️ Настройки|⚙️ Settings' };
   const E = esc;
   const clock = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   function curWho() { const ns = names(); if (!ns.includes(ui.who)) ui.who = ns[0] || null; return ui.who; }
@@ -707,7 +849,7 @@
       ${plates.length ? `<div class="cfp-tags">${plates.map((p) => `<span>${p}</span>`).join('')}</div>` : ''}</div></div>`;
     const cancel = e.cancel ? `<div class="cfp-card cfp-alert">${CANCEL[e.cancel.severity].icon} <b>${bi(CANCEL[e.cancel.severity].label)}</b>: ${E(e.cancel.reason)}<div class="cfp-sub">${tr('Осталось', 'Left')} ~${e.cancel.left} ${tr('сообщ.', 'msgs')}</div></div>` : '';
     const act = e.tasks.filter((t) => t.active && !t.done).length;
-    const badge = { content: e.live ? '🔴' : '', tasks: act ? act : '', aud: e.cancel ? '!' : '', feed: e.reaction ? '•' : '', threats: e.doxxLeft > 0 ? '!' : stalkerVisible(e) ? '👁' : '' };
+    const badge = { content: e.live ? '🔴' : '', tasks: act ? act : '', aud: e.cancel ? '!' : '', feed: e.reaction ? '•' : '', threats: e.doxxLeft > 0 ? '!' : stalkerVisible(e) ? '👁' : '', money: e.offers.filter((o) => o.status === 'new').length + e.parcels.filter((p) => p.status === 'arrived').length || '' };
     const grid = APPS.map((a) => `<div class="cfp-app" data-act="open" data-v="${a.id}"><div class="cfp-ico" style="background:${a.bg}">${a.icon}${badge[a.id] ? `<span class="cfp-bdg">${badge[a.id]}</span>` : ''}</div><span>${bi(a.name)}</span></div>`).join('');
     return prof + cancel + `<div class="cfp-grid">${grid}</div>`;
   }
@@ -829,6 +971,40 @@
     return hat + crisis + stalk + tags + `<div>${btn('editthreat', tr('🛠 Изменить значения', '🛠 Edit values'))}</div>`;
   }
 
+  function offerCard(o) {
+    const tag = o.shady ? `<div class="cfp-tags"><span>⚠️ ${tr('сомнительный бренд', 'shady brand')}: ${MOVES[o.shady].icon} ${E(bi(MOVES[o.shady].name))}</span></div>` : '';
+    return `<div class="cfp-card"><div class="cfp-th"><b>${o.kind === 'pr' ? '📦' : '🤝'} ${E(o.brand)}</b><span class="cfp-rew">${o.kind === 'pr' ? tr('PR-посылка', 'PR package') : money(o.pay)}</span></div>
+      <div class="cfp-sub">${o.kind === 'pr' ? tr(`Хотят отправить: ${bi(o.item)}`, `They want to send: ${bi(o.item)}`) : `${fLabel(o.format)}${o.place ? ` · ${PLACES[o.place].icon} ${pName(o.place)}` : ''}`}</div>${tag}
+      <div class="cfp-sub">${tr('Ответить в течение', 'Reply within')} ${o.left} ${tr('сообщ.', 'msgs')}</div>
+      <div class="cfp-tb">${btn('accept', tr('✅ Принять', '✅ Accept'), o.id, 'pri')}${btn('decline', tr('✖ Отклонить', '✖ Decline'), o.id)}</div></div>`;
+  }
+  function screenMoney(e, who) {
+    if (!e.career) return needCareer();
+    const s = S();
+    const inbox = e.offers.filter((o) => o.status === 'new'), parcels = e.parcels.filter((p) => p.status !== 'sold');
+    const seg = `<div class="cfp-seg">${[['inbox', tr('📥 Входящие', '📥 Inbox'), inbox.length || ''], ['parcels', tr('📦 Посылки', '📦 Parcels'), parcels.length || ''], ['wallet', tr('💳 Кошелёк', '💳 Wallet'), '']]
+      .map(([k, l, n]) => `<div class="${ui.mtab === k ? 'on' : ''}" data-act="mtab" data-v="${k}">${l} ${n}</div>`).join('')}</div>`;
+    if (ui.mtab === 'inbox') return seg + (inbox.length ? inbox.map(offerCard).join('') : empty(tr('Новых предложений нет. Чем выше слава и репутация у брендов, тем чаще они пишут.', 'No new offers. The higher your fame and brand reputation, the more often they write.')));
+    if (ui.mtab === 'parcels') {
+      const st = { transit: tr('🚚 в пути', '🚚 in transit'), arrived: tr('📬 прибыла', '📬 arrived'), opened: tr('📦 распакована', '📦 unboxed'), reviewed: tr('🎬 обзор снят', '🎬 reviewed') };
+      return seg + (parcels.length ? parcels.map((p) => `<div class="cfp-card"><div class="cfp-th"><b>📦 ${E(p.brand)}</b><span class="cfp-rew">${st[p.status] || p.status}</span></div>
+        <div class="cfp-sub">${E(bi(p.item))} · ${tr('примерно', 'worth about')} ${money(p.value)}${p.status === 'transit' ? ` · ${tr('ещё', 'in')} ~${p.left} ${tr('сообщ.', 'msgs')}` : ''}</div>
+        <div class="cfp-tb">${p.status === 'arrived' ? btn('unbox', tr('📦 Распаковать', '📦 Unbox'), p.id, 'pri') : ''}${p.status === 'arrived' || p.status === 'opened' ? btn('review', tr('🎬 Снять обзор', '🎬 Film a review'), p.id) + btn('sell', tr('💸 Продать', '💸 Sell'), p.id) : ''}</div></div>`).join('')
+        : empty(tr('Посылок пока нет. Примите PR-запрос от бренда во «Входящих».', 'No parcels yet. Accept a PR request from a brand in the Inbox.')));
+    }
+    const nextPay = s.salaryEvery > 0 ? s.salaryEvery - (e.tickCount % s.salaryEvery) : null;
+    const tx = e.wallet.length ? e.wallet.slice(0, 12).map((w) => `<div class="cfp-note">${w.amount > 0 ? '+' : ''}${money(w.amount)} — ${E(w.memo)}</div>`).join('') : `<div class="cfp-sub">${tr('Операций пока нет', 'No transactions yet')}</div>`;
+    return seg + `<div class="cfp-card"><div class="cfp-h">💳 ${tr('Баланс', 'Balance')}: ${money(e.money)}</div>
+      <div class="cfp-sub">${nextPay ? tr(`Следующая выплата (${bi(SALARY_LABEL[e.career])}) через ~${nextPay} сообщ.`, `Next payout (${bi(SALARY_LABEL[e.career])}) in ~${nextPay} msgs`) : tr('Автовыплаты выключены в настройках', 'Auto payouts are off in settings')}</div>
+      <div class="cfp-tb">${btn('salary', tr('💵 Получить выплату сейчас', '💵 Get a payout now'), '', 'pri')}${btn('balance', tr('± Баланс', '± Balance'))}</div></div>
+      <div class="cfp-card"><div class="cfp-h">${tr('Операции', 'Transactions')}</div>${tx}</div>
+      <div class="cfp-card"><div class="cfp-h">🔌 Phone-ST</div>
+        <div class="cfp-sub">${tr('Деньги, предложения и посылки отправляются событиями career-fame:money / offer / parcel / deal. Если банк Phone-ST не пополняется, нажмите диагностику и пришлите результат — по нему я допишу точное подключение.', 'Money, offers and parcels are sent as career-fame:money / offer / parcel / deal events. If the Phone-ST bank is not topped up, run the diagnostics and send me the result — I will finish the exact connection from it.')}</div>
+        <div class="cfp-sub">${tr('Отправлено событий', 'Events sent')}: ${bridgeLog.length}</div>
+        <div class="cfp-tb">${btn('diag', tr('🔍 Диагностика Phone-ST', '🔍 Phone-ST diagnostics'))}</div>
+        ${ui.diag ? `<textarea class="cfp-in" readonly rows="9" style="font-size:10.5px">${E(ui.diag)}</textarea>` : ''}</div>`;
+  }
+
   function screenMoves(e, who) {
     if (!e.career) return needCareer();
     const s = S(); const sg = (n) => (n >= 0 ? '+' : '') + n;
@@ -862,6 +1038,13 @@
         <div class="cfp-sub">${tr('Как часто появляются сталкеры', 'How often stalkers appear')}</div>${sel('stalkerFreq', [['rare', tr('Редко', 'Rarely')], ['normal', tr('Обычно', 'Normal')], ['often', tr('Часто', 'Often')]])}
         ${chk('cuckTag', tr('Ярлык «куколд» при уходе на платформу 18+', '“Cuck” label when going to an 18+ platform'))}
         <div class="cfp-sub">${tr('Кому ставить ярлык', 'Who gets the label')}</div>${sel('cuckTarget', [['self', tr('Тому, кто ушёл', 'The one who went')], ['partner', tr('Партнёру (второму участнику)', 'The partner (the other participant)')]])}</div>
+      <div class="cfp-card"><div class="cfp-h">💰 ${tr('Деньги и бренды', 'Money & brands')}</div>
+        <div class="cfp-sub">${tr('Валюта (символ)', 'Currency symbol')}</div><input class="cfp-in" data-set="currency" value="${E(s.currency)}">
+        <div class="cfp-sub">${tr('Выплата каждые N сообщений (0 — выключено)', 'Payout every N messages (0 = off)')}</div><input class="cfp-in cfp-num" type="number" min="0" max="500" data-set="salaryEvery" value="${s.salaryEvery}">
+        ${chk('brandOffers', tr('Предложения и PR-запросы от брендов', 'Brand offers and PR requests'))}
+        <div class="cfp-sub">${tr('Как часто бренды пишут', 'How often brands write')}</div>${sel('offerFreq', [['rare', tr('Редко', 'Rarely')], ['normal', tr('Обычно', 'Normal')], ['often', tr('Часто', 'Often')]])}
+        ${chk('bridgeEvents', tr('Отправлять события в Phone-ST и другие расширения', 'Send events to Phone-ST and other extensions'))}
+        ${chk('bridgePrompt', tr('Упоминать уведомления телефона в сюжете', 'Mention phone notifications in the story'))}</div>
       <div class="cfp-card"><div class="cfp-h">${tr('Модель для анализа и заданий', 'Model for analysis and tasks')}</div>
         <select class="cfp-in" data-set="mode">
           <option value="current" ${s.mode === 'current' ? 'selected' : ''}>${tr('Текущее подключение (без настройки)', 'Current connection (no setup)')}</option>
@@ -887,7 +1070,7 @@
     if (!S().enabled) body = empty(tr('Расширение выключено', 'Extension is off'), `<div>${btn('open', tr('⚙️ Настройки', '⚙️ Settings'), '', '', 'settings')}</div>`);
     else if (ui.screen === 'settings') body = screenSettings();
     else if (!e) body = empty(tr('Откройте чат с персонажем', 'Open a chat with a character'));
-    else body = ({ home: screenHome, content: screenContent, career: screenCareer, tasks: screenTasks, feed: screenFeed, aud: screenAud, threats: screenThreats, moves: screenMoves }[ui.screen] || screenHome)(e, who);
+    else body = ({ home: screenHome, content: screenContent, career: screenCareer, tasks: screenTasks, feed: screenFeed, aud: screenAud, threats: screenThreats, moves: screenMoves, money: screenMoney }[ui.screen] || screenHome)(e, who);
     const whoBar = e && ui.screen !== 'settings' && S().enabled
       ? `<div class="cfp-who">${names().map((n) => `<div class="cfp-pill ${n === who ? 'on' : ''}" data-act="who" data-v="${E(n)}">${iconOf(ent(n))} ${E(n)}</div>`).join('')}</div>` : '';
     const pct = Math.round(S().opacity * 100);
@@ -996,6 +1179,13 @@
       case 'move':
         if (e && MOVES[v] && confirm(tr(`Совершить: ${bi(MOVES[v].name)}?`, `Do: ${bi(MOVES[v].name)}?`))) { applyMove(who, e, v, tr('вручную', 'manual')); ui.screen = 'feed'; commit(); }
         break;
+      case 'mtab': ui.mtab = v; renderPhone(); break;
+      case 'accept': if (e && acceptOffer(who, e, id)) { ui.mtab = 'inbox'; } commit(); break;
+      case 'decline': if (e) declineOffer(who, e, id); commit(); break;
+      case 'unbox': case 'review': case 'sell': if (e) parcelAct(who, e, id, act); commit(); break;
+      case 'salary': if (e) { paySalary(who, e); commit(); } break;
+      case 'balance': { const a = parseInt(prompt(tr('Изменить баланс на (±):', 'Change balance by (±):'), '100')); if (a && e) { deposit(who, e, a, tr('Ручная корректировка', 'Manual adjustment'), 'adjust'); commit(); } break; }
+      case 'diag': ui.diag = diagnose(); console.log('[Career&Fame]\n' + ui.diag); renderPhone(); break;
       case 'stalkhide': if (e) { e.stalkerHidden = true; commit(); } break;
       case 'stalkshow': if (e) { e.stalkerHidden = false; commit(); } break;
       case 'stalkresolve': if (e) { e.stalker = null; e.stalkerCool = 60; e.stalkerHidden = false; e.tasks.forEach((t) => { if (t.type === 'stalker') t.done = true; }); addLog(e, tr('🛡️ Сталкер больше не беспокоит', '🛡️ The stalker no longer bothers you')); commit(); } break;
@@ -1032,6 +1222,7 @@
     const s = S();
     if (k === 'opacity') { s.opacity = clamp(parseInt(el.value) / 100, 0.3, 1); applyOpacity(); syncOpacityUI(); }
     else if (k === 'exposeScale') s[k] = clamp(parseInt(el.value) || 0, 0, 300);
+    else if (k === 'salaryEvery') s[k] = clamp(parseInt(el.value) || 0, 0, 500);
     else s[k] = el.value;
     saveSettings();
   }
@@ -1044,7 +1235,7 @@
       saveSettings(); renderPhone(); return;
     }
     const k = el.getAttribute('data-set');
-    if (!k || k === 'opacity' || k === 'exposeScale') return;
+    if (!k || k === 'opacity' || k === 'exposeScale' || k === 'salaryEvery' || k === 'currency') return;
     const s = S();
     if (el.type === 'checkbox') s[k] = el.checked; else s[k] = el.value;
     saveSettings();
@@ -1111,7 +1302,19 @@
   }
 
   /* =====================  СОБЫТИЯ  ===================== */
-  if (globalThis.__CF_TEST__) globalThis.__CF_TEST__.api = { ent, genTask, acceptTask, dropTask, completeTask, analyze, applyMove, applyContent, endLive, applyCancel, tickTurn, renderPhone, onClick, onChange, ui, S, updatePrompt, uid, switchCareer, startDoxx, spawnStalker, doxxChance, setLang, chanceOf, MOVES };
+  // Публичный API для других расширений (например, Phone-ST)
+  try {
+    window.CareerFame = {
+      version: '3.1.0',
+      onEvent(cb) { if (typeof cb === 'function') { bridgeListeners.push(cb); return () => { const i = bridgeListeners.indexOf(cb); if (i >= 0) bridgeListeners.splice(i, 1); }; } },
+      getState(name) { return JSON.parse(JSON.stringify(ent(name || ctx().name1))); },
+      getWallet(name) { const e = ent(name || ctx().name1); return { balance: e.money, currency: S().currency, transactions: JSON.parse(JSON.stringify(e.wallet)) }; },
+      getOffers(name) { return JSON.parse(JSON.stringify(ent(name || ctx().name1).offers)); },
+      getParcels(name) { return JSON.parse(JSON.stringify(ent(name || ctx().name1).parcels)); },
+      events: ['money', 'offer', 'offer_accepted', 'parcel', 'deal'],
+    };
+  } catch (_) { /* ignore */ }
+  if (globalThis.__CF_TEST__) globalThis.__CF_TEST__.api = { ent, genTask, acceptTask, dropTask, completeTask, analyze, applyMove, applyContent, endLive, applyCancel, tickTurn, renderPhone, onClick, onChange, ui, S, updatePrompt, uid, switchCareer, startDoxx, spawnStalker, doxxChance, setLang, chanceOf, MOVES, genOffer, acceptOffer, declineOffer, parcelAct, paySalary, deposit, diagnose, bridgeLog };
   jQuery(() => {
     const c = ctx();
     mountUI(); updatePrompt(); renderPhone();
