@@ -11,7 +11,7 @@
     endpointUrl: 'http://localhost:4000/v1', endpointKey: '', endpointModel: '',
     haters: true, doxx: true, stalkers: true, stalkerPlate: true, stalkerFreq: 'normal',
     cuckTag: true, cuckTarget: 'self', cancelChance: {}, exposeScale: 100,
-    currency: '₽', salaryEvery: 25, brandOffers: true, offerFreq: 'normal', bridgeEvents: true, bridgePrompt: true, phoneSms: true, phoneBank: true, banners: true,
+    currency: '₽', salaryEvery: 25, brandOffers: true, offerFreq: 'normal', bridgeEvents: true, bridgePrompt: true, phoneSms: true, phoneBank: true, banners: true, theme: 'midnight',
   };
   function S() {
     const { extensionSettings } = ctx();
@@ -968,6 +968,8 @@
   ];
   const TITLES = { home: 'Career & Fame', career: '💼 Карьера|💼 Career', tasks: '🎯 Задания|🎯 Tasks', content: '📡 Контент|📡 Content', feed: '📰 События|📰 Events', aud: '👥 Аудитория|👥 Audience',
     threats: '🛡️ Угрозы и ярлыки|🛡️ Threats & labels', moves: '🎭 Спорные ходы|🎭 Controversial moves', money: '💰 Деньги и бренды|💰 Money & brands', settings: '⚙️ Настройки|⚙️ Settings' };
+  const THEMES = [['midnight', 'Полночь|Midnight', '#7f5af0', '#2cb67d'], ['aurora', 'Аврора|Aurora', '#22d3ee', '#a78bfa'], ['rose', 'Роза|Rose', '#fb7185', '#f59e0b'],
+    ['gold', 'Оскар|Oscar', '#f5c542', '#b8860b'], ['light', 'Светлая|Light', '#e9ecf8', '#6d5ae6'], ['amoled', 'AMOLED|AMOLED', '#000000', '#34d399']];
   const E = esc;
   const clock = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   function curWho() { const ns = names(); if (!ns.includes(ui.who)) ui.who = ns[0] || null; return ui.who; }
@@ -1168,12 +1170,14 @@
     const chk = (k, label) => `<label class="cfp-chk"><input type="checkbox" data-set="${k}" ${s[k] ? 'checked' : ''}><span>${label}</span></label>`;
     const sel = (k, opts) => `<select class="cfp-in" data-set="${k}">${opts.map(([v, l]) => `<option value="${v}" ${s[k] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
     const profiles = ctx().extensionSettings?.connectionManager?.profiles || [];
-    return `<div class="cfp-card"><div class="cfp-h">${tr('Общее', 'General')}</div>
+    const themes = `<div class="cfp-card"><div class="cfp-h">🎨 ${tr('Тема оформления', 'Theme')}</div><div class="cfp-themes">${THEMES.map(([k, n, c1, c2]) =>
+      `<div class="cfp-theme ${s.theme === k ? 'on' : ''}" data-act="theme" data-v="${k}"><i style="background:linear-gradient(135deg,${c1},${c2})"></i>${bi(n)}</div>`).join('')}</div></div>`;
+    return themes + `<div class="cfp-card"><div class="cfp-h">${tr('Общее', 'General')}</div>
         <div class="cfp-sub">🌐 ${tr('Язык', 'Language')}</div>${sel('lang', [['ru', 'Русский'], ['en', 'English']])}
         ${chk('enabled', tr('Расширение включено', 'Extension enabled'))}${chk('showFab', tr('Плавающая кнопка 📱', 'Floating button 📱'))}${chk('inject', tr('Передавать состояние в промпт', 'Send state to the prompt'))}
         ${chk('demandActions', tr('Награда только за действия в постах', 'Reward only for actions shown in posts'))}${chk('auto', tr('Авто-анализ после каждого ответа', 'Auto-analysis after every reply'))}
-        <div class="cfp-sub" style="margin-top:8px">🔆 ${tr('Непрозрачность телефона', 'Phone opacity')}: <b id="cfp_opv">${Math.round(s.opacity * 100)}%</b></div>
-        <input type="range" min="30" max="100" step="5" value="${Math.round(s.opacity * 100)}" data-set="opacity" class="cfp-range"></div>
+        <div class="cfp-sub" style="margin-top:8px">🔆 ${tr('Прозрачность фона: убирает цвет, текст остаётся', 'Background opacity: removes the color, text stays')}: <b id="cfp_opv">${Math.round(s.opacity * 100)}%</b></div>
+        <input type="range" min="0" max="100" step="5" value="${Math.round(s.opacity * 100)}" data-set="opacity" class="cfp-range"></div>
       <div class="cfp-card"><div class="cfp-h">🛡️ ${tr('Угрозы и ярлыки', 'Threats & labels')}</div>
         ${chk('haters', tr('Хейтеры', 'Haters'))}${chk('doxx', tr('Доксинг (вероятность и последствия)', 'Doxxing (probability and consequences)'))}
         ${chk('stalkers', tr('Сталкеры', 'Stalkers'))}${chk('stalkerPlate', tr('Показывать плашку сталкера и упоминать его в сюжете', 'Show the stalker plate and mention it in the story'))}
@@ -1221,10 +1225,11 @@
     const pct = Math.round(S().opacity * 100);
     root.innerHTML = `<div class="cfp-notch"></div>
       <div class="cfp-status"><span class="cfp-time">${clock()}</span>
-        <span class="cfp-opw" title="${tr('Непрозрачность', 'Opacity')}">🔆<input class="cfp-op" type="range" min="30" max="100" step="5" value="${pct}" data-set="opacity"><small id="cfp_opb">${pct}%</small></span>
-        <span class="cfp-lang" data-act="lang" title="Language / Язык">🌐 ${LANG().toUpperCase()}</span></div>
+        <span class="cfp-opw" title="${tr('Прозрачность фона', 'Background opacity')}">🔆<input class="cfp-op" type="range" min="0" max="100" step="5" value="${pct}" data-set="opacity"><small id="cfp_opb">${pct}%</small></span>
+        <span class="cfp-sig">📶 🔋</span></div>
       <div class="cfp-title">${ui.screen !== 'home' ? '<span class="cfp-back" data-act="home">‹</span>' : '<span class="cfp-back"></span>'}<b>${bi(TITLES[ui.screen] || '')}</b><span class="cfp-x" data-act="close">✕</span></div>
       ${whoBar}<div class="cfp-body" data-screen="${ui.screen}">${body}</div><div class="cfp-homebar" data-act="home"><i></i></div>`;
+    if (root.setAttribute) root.setAttribute('data-theme', S().theme || 'midnight');
     const nb = root.querySelector ? root.querySelector('.cfp-body') : null;
     if (nb && prevScroll) nb.scrollTop = prevScroll;
   }
@@ -1239,7 +1244,7 @@
     const b = fab.querySelector('.cf-badge');
     if (b) { b.textContent = cancelled ? '🚫' : live ? '🔴' : (n || ''); b.style.display = cancelled || live || n ? 'flex' : 'none'; }
   }
-  function applyOpacity() { document.documentElement.style.setProperty('--cfp-op', String(S().opacity)); }
+  function applyOpacity() { document.documentElement.style.setProperty('--cfp-a', String(S().opacity)); }
   function placePhone() {
     const phone = document.getElementById('cf_phone'), fab = document.getElementById('cf_fab');
     if (!phone) return;
@@ -1324,6 +1329,7 @@
       case 'move':
         if (e && MOVES[v] && confirm(tr(`Совершить: ${bi(MOVES[v].name)}?`, `Do: ${bi(MOVES[v].name)}?`))) { applyMove(who, e, v, tr('вручную', 'manual')); ui.screen = 'feed'; commit(); }
         break;
+      case 'theme': S().theme = v; saveSettings(); renderPhone(); break;
       case 'mtab': ui.mtab = v; renderPhone(); break;
       case 'accept': if (e && acceptOffer(who, e, id)) { ui.mtab = 'inbox'; } commit(); break;
       case 'decline': if (e) declineOffer(who, e, id); commit(); break;
@@ -1370,7 +1376,7 @@
     const el = ev.target, k = el.getAttribute && el.getAttribute('data-set');
     if (!k || el.type === 'checkbox' || el.tagName === 'SELECT') return;
     const s = S();
-    if (k === 'opacity') { s.opacity = clamp(parseInt(el.value) / 100, 0.3, 1); applyOpacity(); syncOpacityUI(); }
+    if (k === 'opacity') { s.opacity = clamp(parseInt(el.value) / 100, 0, 1); applyOpacity(); syncOpacityUI(); }
     else if (k === 'exposeScale') s[k] = clamp(parseInt(el.value) || 0, 0, 300);
     else if (k === 'salaryEvery') s[k] = clamp(parseInt(el.value) || 0, 0, 500);
     else s[k] = el.value;
@@ -1396,7 +1402,7 @@
 
   function initFab() {
     const fab = document.getElementById('cf_fab'), s = S();
-    if (s.fabX !== null && s.fabY !== null) Object.assign(fab.style, { left: clamp(s.fabX, 0, window.innerWidth - 54) + 'px', top: clamp(s.fabY, 0, window.innerHeight - 54) + 'px', right: 'auto', bottom: 'auto' });
+    if (s.fabX !== null && s.fabY !== null) Object.assign(fab.style, { left: clamp(s.fabX, 0, window.innerWidth - 40) + 'px', top: clamp(s.fabY, 0, window.innerHeight - 52) + 'px', right: 'auto', bottom: 'auto' });
     let drag = null;
     fab.addEventListener('pointerdown', (ev) => { drag = { x: ev.clientX, y: ev.clientY, l: fab.offsetLeft, t: fab.offsetTop, moved: false }; try { fab.setPointerCapture(ev.pointerId); } catch (_) {} });
     fab.addEventListener('pointermove', (ev) => {
@@ -1426,7 +1432,7 @@
       <label class="checkbox_label"><input type="checkbox" id="cf_d_enabled"><span>${tr('Включено', 'Enabled')}</span></label>
       <label class="checkbox_label"><input type="checkbox" id="cf_d_fab"><span>${tr('Плавающая кнопка 📱', 'Floating button 📱')}</span></label>
       <label>🌐 ${tr('Язык', 'Language')}</label><select id="cf_d_lang" class="text_pole"><option value="ru">Русский</option><option value="en">English</option></select>
-      <label>${tr('Непрозрачность телефона', 'Phone opacity')}</label><input type="range" id="cf_d_op" min="30" max="100" step="5" style="width:100%">
+      <label>${tr('Прозрачность фона телефона (текст остаётся)', 'Phone background opacity (text stays)')}</label><input type="range" id="cf_d_op" min="0" max="100" step="5" style="width:100%">
       <div class="menu_button" id="cf_d_open">📱 ${tr('Открыть телефон', 'Open the phone')}</div>
       <small>${tr('Остальные настройки (модель, угрозы, ярлыки, шанс отмены) — в приложениях внутри телефона.', 'Other settings (model, threats, labels, cancel chance) are inside the phone apps.')}</small>`);
     syncDrawer();
@@ -1434,11 +1440,11 @@
     $('#cf_d_enabled').on('change', function () { s.enabled = this.checked; saveSettings(); updateFab(); updatePrompt(); renderPhone(); });
     $('#cf_d_fab').on('change', function () { s.showFab = this.checked; saveSettings(); updateFab(); });
     $('#cf_d_lang').on('change', function () { setLang(this.value); });
-    $('#cf_d_op').on('input', function () { s.opacity = clamp(parseInt(this.value) / 100, 0.3, 1); applyOpacity(); saveSettings(); syncOpacityUI(); });
+    $('#cf_d_op').on('input', function () { s.opacity = clamp(parseInt(this.value) / 100, 0, 1); applyOpacity(); saveSettings(); syncOpacityUI(); });
     $('#cf_d_open').on('click', () => setOpen(true));
   }
   function mountUI() {
-    document.body.insertAdjacentHTML('beforeend', '<div id="cf_fab" title="Career & Fame">📱<span class="cf-badge"></span></div><div id="cf_phone" class="cf-phone"></div>');
+    document.body.insertAdjacentHTML('beforeend', `<div id="cf_fab" title="Career & Fame"><svg viewBox="0 0 24 40" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5.2" r="3.1"/><path d="M8.3 9.6c0-.9 1.1-1.4 3.7-1.4s3.7.5 3.7 1.4l-.5 9.6c-.1 1.2-.7 2.3-1.6 3.2l.7 5.2H9.7l.7-5.2c-.9-.9-1.5-2-1.6-3.2z"/><path d="M6.6 28.6h10.8l1.1 3.4H5.5z"/><rect x="4" y="32.6" width="16" height="4.6" rx="1.3"/><path d="M12 10.6v11" stroke="rgba(255,255,255,.5)" stroke-width=".9" stroke-linecap="round" fill="none"/></svg><span class="cf-badge"></span></div><div id="cf_phone" class="cf-phone" data-theme="${S().theme || 'midnight'}"></div>`);
     const phone = document.getElementById('cf_phone');
     phone.addEventListener('click', (ev) => safe(() => onClick(ev)));
     phone.addEventListener('input', onInput);
@@ -1455,7 +1461,7 @@
   // Публичный API для других расширений (например, Phone-ST)
   try {
     window.CareerFame = {
-      version: '3.3.0',
+      version: '3.4.0',
       onEvent(cb) { if (typeof cb === 'function') { bridgeListeners.push(cb); return () => { const i = bridgeListeners.indexOf(cb); if (i >= 0) bridgeListeners.splice(i, 1); }; } },
       getState(name) { return JSON.parse(JSON.stringify(ent(name || ctx().name1))); },
       getWallet(name) { const e = ent(name || ctx().name1); return { balance: e.money, currency: S().currency, transactions: JSON.parse(JSON.stringify(e.wallet)) }; },
